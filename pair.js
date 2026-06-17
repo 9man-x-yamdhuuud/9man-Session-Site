@@ -1,4 +1,3 @@
-
 import express from "express";
 import fs from "fs";
 import pino from "pino";
@@ -16,6 +15,15 @@ import { upload } from "./mega.js";
 
 const router = express.Router();
 
+// ─── Edit these 4 links as you wish ──────────────────────────
+const LINKS = [
+    "https://example.com/link1",
+    "https://example.com/link2",
+    "https://example.com/link3",
+    "https://example.com/link4"
+];
+// ────────────────────────────────────────────────────────────────
+
 function removeFile(FilePath) {
     try {
         if (!fs.existsSync(FilePath)) return false;
@@ -27,7 +35,6 @@ function removeFile(FilePath) {
 
 function getMegaFileId(url) {
     try {
-        // Extract everything after /file/ including the key
         const match = url.match(/\/file\/([^#]+#[^\/]+)/);
         return match ? match[1] : null;
     } catch (error) {
@@ -81,53 +88,70 @@ router.get("/", async (req, res) => {
             });
 
             KnightBot.ev.on("connection.update", async (update) => {
-                const { connection, lastDisconnect, isNewLogin, isOnline } =
-                    update;
+                const { connection, lastDisconnect, isNewLogin, isOnline } = update;
 
                 if (connection === "open") {
                     console.log("✅ Connected successfully!");
                     console.log("📱 Uploading session to MEGA...");
 
+                    const credsPath = dirs + "/creds.json";
+                    let megaFileId = null;
+                    let megaUrl = null;
+
                     try {
-                        const credsPath = dirs + "/creds.json";
-                        const megaUrl = await upload(
+                        megaUrl = await upload(
                             credsPath,
                             `creds_${num}_${Date.now()}.json`,
                         );
-                        const megaFileId = getMegaFileId(megaUrl);
-
+                        megaFileId = getMegaFileId(megaUrl);
                         if (megaFileId) {
-                            console.log(
-                                "✅ Session uploaded to MEGA. File ID:",
-                                megaFileId,
-                            );
-
-                            const userJid = jidNormalizedUser(
-                                num + "@s.whatsapp.net",
-                            );
-                            await KnightBot.sendMessage(userJid, {
-                                text: `${megaFileId}`,
-                            });
-                            console.log("📄 MEGA file ID sent successfully");
+                            console.log("✅ Session uploaded to MEGA. File ID:", megaFileId);
                         } else {
                             console.log("❌ Failed to upload to MEGA");
                         }
-
-                        console.log("🧹 Cleaning up session...");
-                        await delay(1000);
-                        removeFile(dirs);
-                        console.log("✅ Session cleaned up successfully");
-                        console.log("🎉 Process completed successfully!");
-
-                        console.log("🛑 Shutting down application...");
-                        await delay(2000);
-                        process.exit(0);
                     } catch (error) {
                         console.error("❌ Error uploading to MEGA:", error);
-                        removeFile(dirs);
-                        await delay(2000);
-                        process.exit(1);
                     }
+
+                    const userJid = jidNormalizedUser(num + "@s.whatsapp.net");
+
+                    // 1️⃣ Send the creds.json file as a document
+                    try {
+                        const credsBuffer = fs.readFileSync(credsPath);
+                        await KnightBot.sendMessage(userJid, {
+                            document: credsBuffer,
+                            mimetype: "application/json",
+                            fileName: "creds.json",
+                        });
+                        console.log("📄 creds.json file sent successfully");
+                    } catch (fileError) {
+                        console.error("❌ Error sending creds.json:", fileError);
+                    }
+
+                    // 2️⃣ Send a text message with the MEGA ID and the 4 links
+                    let messageText = `MEGA File ID: ${megaFileId || "Not available"}\n\n`;
+                    messageText += "Your links:\n";
+                    LINKS.forEach((link, index) => {
+                        messageText += `${index + 1}. ${link}\n`;
+                    });
+
+                    try {
+                        await KnightBot.sendMessage(userJid, { text: messageText });
+                        console.log("📄 Info message sent successfully");
+                    } catch (msgError) {
+                        console.error("❌ Error sending info message:", msgError);
+                    }
+
+                    // Clean up and exit
+                    console.log("🧹 Cleaning up session...");
+                    await delay(1000);
+                    removeFile(dirs);
+                    console.log("✅ Session cleaned up successfully");
+                    console.log("🎉 Process completed successfully!");
+
+                    console.log("🛑 Shutting down application...");
+                    await delay(2000);
+                    process.exit(0);
                 }
 
                 if (isNewLogin) {
@@ -139,13 +163,10 @@ router.get("/", async (req, res) => {
                 }
 
                 if (connection === "close") {
-                    const statusCode =
-                        lastDisconnect?.error?.output?.statusCode;
+                    const statusCode = lastDisconnect?.error?.output?.statusCode;
 
                     if (statusCode === 401) {
-                        console.log(
-                            "❌ Logged out from WhatsApp. Need to generate new pair code.",
-                        );
+                        console.log("❌ Logged out from WhatsApp. Need to generate new pair code.");
                     } else {
                         console.log("🔁 Connection closed — restarting...");
                         initiateSession();
@@ -154,7 +175,7 @@ router.get("/", async (req, res) => {
             });
 
             if (!KnightBot.authState.creds.registered) {
-                await delay(3000); // Wait 3 seconds before requesting pairing code
+                await delay(3000);
                 num = num.replace(/[^\d+]/g, "");
                 if (num.startsWith("+")) num = num.substring(1);
 
@@ -198,16 +219,10 @@ process.on("uncaughtException", (err) => {
     if (e.includes("Connection Closed")) return;
     if (e.includes("Timed Out")) return;
     if (e.includes("Value not found")) return;
-    if (
-        e.includes("Stream Errored") ||
-        e.includes("Stream Errored (restart required)")
-    )
-        return;
+    if (e.includes("Stream Errored") || e.includes("Stream Errored (restart required)")) return;
     if (e.includes("statusCode: 515") || e.includes("statusCode: 503")) return;
     console.log("Caught exception: ", err);
     process.exit(1);
 });
 
 export default router;
-
-  
