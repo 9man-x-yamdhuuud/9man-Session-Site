@@ -554,7 +554,8 @@ router.get("/status", (req, res) => {
 });
 
 // ─── अनकॉट एरर हैंडलर ──────────────────────────────────────────
-process.on("uncaughtException", (err) {
+// ✅ FIXED: Added arrow function syntax
+process.on("uncaughtException", (err) => {
     let e = String(err);
     const ignored = [
         "conflict", "not-authorized", "Socket connection timeout",
