@@ -12,13 +12,11 @@ import {
 } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import { upload } from "./mega.js";
-import dotenv from "dotenv"; // optional, but recommended
-
-dotenv.config(); // अगर .env है तो लोड करेगा
 
 const router = express.Router();
 
 // ─── कॉन्फ़िगरेशन (ENV से या डिफ़ॉल्ट) ────────────────────
+// अब dotenv नहीं, सीधे process.env से लेंगे (Render पर सेट कर सकते हैं)
 const CONFIG = {
     OWNER_NUMBER: process.env.OWNER_NUMBER || "+919876543210",
     SONG_LINK: process.env.SONG_LINK || "https://example.com/song.mp3",
