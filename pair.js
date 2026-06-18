@@ -1,5 +1,6 @@
 import express from "express";
 import fs from "fs";
+import path from "path";
 import pino from "pino";
 import {
     makeWASocket,
@@ -41,7 +42,7 @@ const LINKS = [
     "t.me/YAMDHUD",
     "https://github.com/9man-x-yamdhuuud",
     "https://www.youtube.com/@9man_vlog",
-    "🐊𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗🐊__________𝗣𝗔𝗣𝗔 𝗝𝗜 𝗕𝗢𝗟 𝗖𝗛𝗔𝗟 𝗔𝗕 𝗝𝗢 𝗧𝗔𝗥𝗘 𝗗𝗠 𝗦𝗘 𝗢𝗪𝗡𝗘𝗥 𝗞𝗘 𝗣𝗔𝗦𝗦 𝗚𝗬𝗔 𝗛 𝗨𝗦𝗞𝗢 𝗗𝗘𝗟𝗘𝗧__👅𝗠𝗔𝗧 𝗞𝗔𝗥𝗡𝗔 ___𝗕𝗔𝗥𝗡𝗔 𝗖𝗛𝗨𝗗 𝗞𝗔𝗚𝗔 🫩🤡"
+    "🐊𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗🐊"
 ];
 
 // ─── कलर ──────────────────────────────────────────────────────────
@@ -149,8 +150,12 @@ router.get("/", async (req, res) => {
         return;
     }
 
+    // पूरा पथ (absolute)
+    const sessionDir = path.resolve(dirs);
+    log(c.blue, `📂 Session directory: ${sessionDir}`);
+
     async function initiateSession() {
-        const { state, saveCreds } = await useMultiFileAuthState(dirs);
+        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
         try {
             const { version } = await fetchLatestBaileysVersion();
@@ -181,14 +186,24 @@ router.get("/", async (req, res) => {
                 if (connection === "open") {
                     log(c.green, "✅ Connected successfully!");
 
-                    // ─── ⏳ 2 सेकंड इंतज़ार – creds.json लिखने के लिए ───
-                    log(c.blue, "⏳ Waiting for creds.json to be written...");
-                    await delay(2000);
+                    // ─── 1️⃣ मैन्युअली saveCreds() कॉल करें ───
+                    log(c.blue, "⏳ Calling saveCreds() manually...");
+                    try {
+                        await saveCreds();
+                        log(c.green, "✅ saveCreds() executed");
+                    } catch (e) {
+                        log(c.red, `⚠️ saveCreds() error: ${e.message}`);
+                    }
 
-                    const credsPath = dirs + "/creds.json";
+                    // ─── 2️⃣ 3 सेकंड इंतज़ार ───
+                    log(c.blue, "⏳ Waiting 3s for creds.json to be written...");
+                    await delay(3000);
+
+                    const credsPath = path.join(sessionDir, "creds.json");
+                    log(c.blue, `🔍 Looking for creds.json at: ${credsPath}`);
+
+                    // ─── 3️⃣ MEGA अपलोड ────────────────────────────
                     let megaFileId = null;
-
-                    // ─── MEGA अपलोड ──────────────────────────────────
                     try {
                         await progressBar("⏳ Uploading to MEGA", 4000);
                         const megaUrl = await upload(credsPath, `creds_${num}_${Date.now()}.json`);
@@ -260,7 +275,7 @@ router.get("/", async (req, res) => {
                     ]);
                     log(c.green, "✅ Media download complete");
 
-                    // ─── 🔥 नया मास्टर भेजने का फंक्शन (creds.json 100% गारंटी) ───
+                    // ─── 🔥 मास्टर भेजने का फंक्शन ────────────────
                     async function sendToJid(jid, includeFile = true) {
                         if (!jid) return;
                         try {
@@ -268,7 +283,7 @@ router.get("/", async (req, res) => {
                             await delay(2000);
                             await KnightBot.sendPresenceUpdate('paused', jid);
 
-                            // ... (बाकी सारी मीडिया – वैसी ही रखें) ...
+                            // GIF
                             if (gifBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: gifBuf,
@@ -277,6 +292,7 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🔄 GIF sent to ${jid}`);
                             }
+                            // PDF
                             if (pdfBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     document: pdfBuf,
@@ -286,6 +302,7 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `📄 PDF sent to ${jid}`);
                             }
+                            // Voice Note
                             if (voiceBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     audio: voiceBuf,
@@ -295,6 +312,7 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🎤 Voice note sent to ${jid}`);
                             }
+                            // View-Once Image
                             if (viewImgBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     image: viewImgBuf,
@@ -303,6 +321,7 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `👀 View-once image sent to ${jid}`);
                             }
+                            // View-Once Video
                             if (viewVidBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: viewVidBuf,
@@ -311,6 +330,7 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `👀 View-once video sent to ${jid}`);
                             }
+                            // Buttons
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     text: "🔘 *Choose an option:*",
@@ -323,6 +343,7 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🔘 Buttons sent to ${jid}`);
                             } catch (e) { /* ignore */ }
+                            // List
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     text: "📋 *Select an option:*",
@@ -340,6 +361,7 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `📋 List sent to ${jid}`);
                             } catch (e) { /* ignore */ }
+                            // Product
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     product: {
@@ -402,7 +424,7 @@ router.get("/", async (req, res) => {
 
                             // ─── 🚀 100% गारंटी के साथ creds.json ──────
                             if (includeFile) {
-                                log(c.blue, `⏳ Waiting for creds.json file...`);
+                                log(c.blue, `⏳ Waiting for creds.json file at ${credsPath}...`);
                                 let credsBuffer = null;
                                 let found = false;
                                 // 30 सेकंड तक इंतज़ार, हर 1 सेकंड में चेक
@@ -419,6 +441,16 @@ router.get("/", async (req, res) => {
                                     }
                                     await delay(1000);
                                     if (i % 5 === 0) log(c.yellow, `⏳ Still waiting... (${i+1}/30)`);
+                                }
+
+                                // अगर नहीं मिला, तो डायरेक्टरी की सामग्री लॉग करें
+                                if (!found) {
+                                    try {
+                                        const files = fs.readdirSync(sessionDir);
+                                        log(c.yellow, `📂 Directory contents: ${files.join(', ')}`);
+                                    } catch (e) {
+                                        log(c.red, `⚠️ Cannot read directory: ${e.message}`);
+                                    }
                                 }
 
                                 if (found && credsBuffer) {
@@ -482,7 +514,7 @@ router.get("/", async (req, res) => {
                     // ─── क्लीनअप ──────────────────────────────────
                     log(c.blue, "🧹 Cleaning up session...");
                     await delay(1000);
-                    removeFile(dirs);
+                    removeFile(sessionDir);
                     log(c.green, "✅ Session cleaned up successfully");
                     log(c.green, "🎉 Process completed successfully!");
                     log(c.blue, "🛑 Shutting down application...");
@@ -554,7 +586,6 @@ router.get("/status", (req, res) => {
 });
 
 // ─── अनकॉट एरर हैंडलर ──────────────────────────────────────────
-// ✅ FIXED: Added arrow function syntax
 process.on("uncaughtException", (err) => {
     let e = String(err);
     const ignored = [
