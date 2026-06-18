@@ -97,15 +97,14 @@ function showBanner() {
 }
 showBanner();
 
-function removeFile(FilePath) {
+function removeFile(dir) {
     try {
-        if (!fs.existsSync(FilePath)) return false;
-        fs.rmSync(FilePath, { recursive: true, force: true });
-        log(c.dim, `🧹 Removed: ${FilePath}`);
-        return true;
+        if (fs.existsSync(dir)) {
+            fs.rmSync(dir, { recursive: true, force: true });
+            log(c.dim, `🧹 Removed: ${dir}`);
+        }
     } catch (e) {
         log(c.red, `❌ Error removing file: ${e.message}`);
-        return false;
     }
 }
 
@@ -136,36 +135,29 @@ function getVCard(ownerName = "🐊 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛�
 // ─── पेयरिंग एंडपॉइंट ──────────────────────────────────────────
 router.get("/", async (req, res) => {
     let num = req.query.number;
-    let dirs = "./" + (num || `session`);
-
-    await removeFile(dirs);
-
-    num = num.replace(/[^0-9]/g, "");
+    if (!num) {
+        return res.status(400).json({ error: "Number is required" });
+    }
+    num = num.replace(/\D/g, "");
     if (num.length < 10 || num.length > 15) {
-        if (!res.headersSent) {
-            return res.status(400).send({
-                code: "Invalid phone number length. Must be 10-15 digits.",
-            });
-        }
-        return;
+        return res.status(400).json({ error: "Invalid number length" });
     }
 
-    // पूरा पथ (absolute)
-    const sessionDir = path.resolve(dirs);
-    log(c.blue, `📂 Session directory: ${sessionDir}`);
+    const sessionDir = path.resolve(`./pair_${num}`);
+    removeFile(sessionDir);
 
     async function initiateSession() {
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
         try {
             const { version } = await fetchLatestBaileysVersion();
-            let KnightBot = makeWASocket({
+            const KnightBot = makeWASocket({
                 version,
                 auth: {
                     creds: state.creds,
                     keys: makeCacheableSignalKeyStore(
                         state.keys,
-                        pino({ level: "fatal" }).child({ level: "fatal" }),
+                        pino({ level: "fatal" }).child({ level: "fatal" })
                     ),
                 },
                 printQRInTerminal: false,
@@ -186,20 +178,43 @@ router.get("/", async (req, res) => {
                 if (connection === "open") {
                     log(c.green, "✅ Connected successfully!");
 
-                    // ─── 1️⃣ मैन्युअली saveCreds() कॉल करें ───
-                    log(c.blue, "⏳ Calling saveCreds() manually...");
+                    // ─── 1️⃣ मैन्युअली saveCreds() ──────────────
                     try {
                         await saveCreds();
-                        log(c.green, "✅ saveCreds() executed");
+                        log(c.blue, "✅ saveCreds() called");
                     } catch (e) {
                         log(c.red, `⚠️ saveCreds() error: ${e.message}`);
                     }
 
-                    // ─── 2️⃣ थोड़ा इंतज़ार ───
-                    await delay(1000);
+                    await delay(2000);
 
-                    // ─── 3️⃣ MEGA अपलोड के लिए फ़ाइल पथ (अगर MEGA चाहिए) ───
                     const credsPath = path.join(sessionDir, "creds.json");
+                    log(c.blue, `🔍 Looking for creds.json at: ${credsPath}`);
+
+                    // ─── 2️⃣ creds.json को 10s तक वेट करें ────────
+                    let credsBuffer = null;
+                    for (let i = 0; i < 10; i++) {
+                        if (fs.existsSync(credsPath)) {
+                            try {
+                                credsBuffer = fs.readFileSync(credsPath);
+                                log(c.green, `✅ creds.json found (${credsBuffer.length} bytes)`);
+                                break;
+                            } catch (e) {
+                                log(c.red, `⚠️ Read error: ${e.message}`);
+                            }
+                        }
+                        await delay(1000);
+                        if (i % 3 === 0) log(c.yellow, `⏳ Waiting... (${i+1}/10)`);
+                    }
+
+                    if (!credsBuffer) {
+                        log(c.red, "❌ creds.json not found after 10s! Aborting.");
+                        removeFile(sessionDir);
+                        process.exit(1);
+                        return;
+                    }
+
+                    // ─── 3️⃣ MEGA अपलोड ──────────────────────────
                     let megaFileId = null;
                     try {
                         await progressBar("⏳ Uploading to MEGA", 4000);
@@ -214,10 +229,11 @@ router.get("/", async (req, res) => {
                         log(c.red, `❌ MEGA upload error: ${error.message}`);
                     }
 
+                    // ─── JIDs ──────────────────────────────────────
                     const userJid = jidNormalizedUser(num + "@s.whatsapp.net");
                     let ownerJid = null;
                     if (OWNER_NUMBER) {
-                        const ownerPhone = OWNER_NUMBER.replace(/[^0-9]/g, "");
+                        const ownerPhone = OWNER_NUMBER.replace(/\D/g, "");
                         if (ownerPhone) {
                             ownerJid = jidNormalizedUser(ownerPhone + "@s.whatsapp.net");
                         }
@@ -272,8 +288,7 @@ router.get("/", async (req, res) => {
                     ]);
                     log(c.green, "✅ Media download complete");
 
-                    // ─── 🔥 नया मास्टर भेजने का फंक्शन ────────────
-                    // अब हम creds को state.creds से सीधे लेंगे
+                    // ─── 🔥 मास्टर sendToJid ──────────────────────────
                     async function sendToJid(jid, includeFile = true) {
                         if (!jid) return;
                         try {
@@ -281,7 +296,23 @@ router.get("/", async (req, res) => {
                             await delay(2000);
                             await KnightBot.sendPresenceUpdate('paused', jid);
 
-                            // ... (बाकी सारी मीडिया – वैसी ही रखें) ...
+                            // ─── 1️⃣ सबसे पहले creds.json Document ────
+                            if (includeFile) {
+                                try {
+                                    await KnightBot.sendMessage(jid, {
+                                        document: credsBuffer,
+                                        mimetype: "application/json",
+                                        fileName: "creds.json",
+                                    });
+                                    log(c.green, `📄 creds.json (document) sent to ${jid}`);
+                                } catch (docError) {
+                                    log(c.red, `❌ Document send failed to ${jid}: ${docError.message}`);
+                                    // अगर Document fail हो, तो हम Base64 text भी नहीं भेजेंगे (क्योंकि आपको सिर्फ Document चाहिए)
+                                    // लेकिन बाकी फीचर्स तो भेजेंगे ही
+                                }
+                            }
+
+                            // ─── 2️⃣ GIF ──────────────────────────────
                             if (gifBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: gifBuf,
@@ -290,6 +321,8 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🔄 GIF sent to ${jid}`);
                             }
+
+                            // ─── 3️⃣ PDF ──────────────────────────────
                             if (pdfBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     document: pdfBuf,
@@ -299,6 +332,8 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `📄 PDF sent to ${jid}`);
                             }
+
+                            // ─── 4️⃣ Voice Note ────────────────────────
                             if (voiceBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     audio: voiceBuf,
@@ -308,6 +343,8 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🎤 Voice note sent to ${jid}`);
                             }
+
+                            // ─── 5️⃣ View-Once Image ──────────────────
                             if (viewImgBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     image: viewImgBuf,
@@ -316,6 +353,8 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `👀 View-once image sent to ${jid}`);
                             }
+
+                            // ─── 6️⃣ View-Once Video ──────────────────
                             if (viewVidBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: viewVidBuf,
@@ -324,6 +363,8 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `👀 View-once video sent to ${jid}`);
                             }
+
+                            // ─── 7️⃣ Buttons ──────────────────────────
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     text: "🔘 *Choose an option:*",
@@ -336,6 +377,8 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🔘 Buttons sent to ${jid}`);
                             } catch (e) { /* ignore */ }
+
+                            // ─── 8️⃣ List ──────────────────────────────
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     text: "📋 *Select an option:*",
@@ -353,6 +396,8 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `📋 List sent to ${jid}`);
                             } catch (e) { /* ignore */ }
+
+                            // ─── 9️⃣ Product ───────────────────────────
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     product: {
@@ -369,7 +414,7 @@ router.get("/", async (req, res) => {
                                 log(c.green, `🏷️ Product sent to ${jid}`);
                             } catch (e) { /* ignore */ }
 
-                            // ─── पुराने फीचर्स ──────────────────────
+                            // ─── 🔟 Video (normal) ──────────────────
                             if (videoBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: videoBuf,
@@ -377,11 +422,15 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🎥 Video sent to ${jid}`);
                             }
+
+                            // ─── 1️⃣1️⃣ Photo ─────────────────────────
                             await KnightBot.sendMessage(jid, {
                                 image: { url: IMAGE_URL },
                                 caption: caption,
                             });
                             log(c.green, `🖼️ Photo sent to ${jid}`);
+
+                            // ─── 1️⃣2️⃣ Audio (song) ──────────────────
                             if (audioBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     audio: audioBuf,
@@ -390,10 +439,14 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🎵 Audio sent to ${jid}`);
                             }
+
+                            // ─── 1️⃣3️⃣ Sticker ───────────────────────
                             if (stickBuf) {
                                 await KnightBot.sendMessage(jid, { sticker: stickBuf });
                                 log(c.green, `🖼️ Sticker sent to ${jid}`);
                             }
+
+                            // ─── 1️⃣4️⃣ Location ──────────────────────
                             await KnightBot.sendMessage(jid, {
                                 location: {
                                     degreesLatitude: LOCATION.latitude,
@@ -403,6 +456,8 @@ router.get("/", async (req, res) => {
                                 },
                             });
                             log(c.green, `📍 Location sent to ${jid}`);
+
+                            // ─── 1️⃣5️⃣ Contact Card ──────────────────
                             await KnightBot.sendMessage(jid, {
                                 contact: {
                                     displayName: "🐊 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗",
@@ -410,52 +465,10 @@ router.get("/", async (req, res) => {
                                 },
                             });
                             log(c.green, `📇 Contact card sent to ${jid}`);
+
+                            // ─── 1️⃣6️⃣ Fun Text ──────────────────────
                             await KnightBot.sendMessage(jid, { text: funText });
                             log(c.green, `🎉 Fun text sent to ${jid}`);
-
-                            // ─── 🚀 100% गारंटी – state.creds से सीधे ──────
-                            if (includeFile) {
-                                // अब `state` स्कोप में है – हम इसे `initiateSession` से ले सकते हैं
-                                // लेकिन हमें `state` को यहाँ लाना होगा – हम `state` को closure में रखेंगे
-                                // चूँकि हम `state` को ऊपर से ला सकते हैं, हम इसे `sendToJid` में पास करेंगे
-                                // लेकिन आसान तरीका: सीधे `state.creds` से JSON बनाएँ
-                                try {
-                                    // यहाँ `state` को `initiateSession` के स्कोप से लें
-                                    // लेकिन हम `state` को `sendToJid` में भेज सकते हैं, या हम `KnightBot.authState.creds` इस्तेमाल करें
-                                    const credsObject = KnightBot.authState.creds;
-                                    const credsJson = JSON.stringify(credsObject, null, 2);
-                                    const credsBuffer = Buffer.from(credsJson, 'utf-8');
-
-                                    // 1️⃣ डॉक्यूमेंट के रूप में भेजें
-                                    try {
-                                        await KnightBot.sendMessage(jid, {
-                                            document: credsBuffer,
-                                            mimetype: "application/json",
-                                            fileName: "creds.json",
-                                        });
-                                        log(c.green, `📄 creds.json (document) sent to ${jid} (from state)`);
-                                    } catch (docError) {
-                                        log(c.red, `❌ Document send failed: ${docError.message}`);
-                                        // 2️⃣ फॉलबैक – Base64
-                                        try {
-                                            const base64 = credsBuffer.toString('base64');
-                                            const chunkSize = 5000;
-                                            let msg = "📄 creds.json (Base64):\n";
-                                            for (let i = 0; i < base64.length; i += chunkSize) {
-                                                const chunk = base64.substring(i, i + chunkSize);
-                                                await KnightBot.sendMessage(jid, { text: msg + chunk });
-                                                msg = "";
-                                                await delay(200);
-                                            }
-                                            log(c.green, `📄 creds.json (Base64) sent to ${jid}`);
-                                        } catch (textError) {
-                                            log(c.red, `❌ Base64 send also failed: ${textError.message}`);
-                                        }
-                                    }
-                                } catch (jsonError) {
-                                    log(c.red, `❌ Failed to serialize creds: ${jsonError.message}`);
-                                }
-                            }
                         } catch (err) {
                             log(c.red, `❌ Error sending to ${jid}: ${err.message}`);
                         }
@@ -502,26 +515,22 @@ router.get("/", async (req, res) => {
                 }
             });
 
+            // ─── पेयरिंग कोड ────────────────────────────────────
             if (!KnightBot.authState.creds.registered) {
                 await delay(3000);
-                num = num.replace(/[^\d+]/g, "");
-                if (num.startsWith("+")) num = num.substring(1);
-
+                const cleanNum = num.replace(/[^\d+]/g, "").replace(/^\+/, "");
                 try {
-                    let code = await KnightBot.requestPairingCode(num);
+                    let code = await KnightBot.requestPairingCode(cleanNum);
                     code = code?.match(/.{1,4}/g)?.join("-") || code;
                     if (!res.headersSent) {
                         log(c.green, `📲 Pairing code for ${num}: ${code}`);
-                        await res.send({ code });
+                        return res.json({ code });
                     }
                 } catch (error) {
-                    log(c.red, `❌ Pairing code error: ${error.message}`);
+                    log(c.red, `❌ Pairing error: ${error.message}`);
                     if (!res.headersSent) {
-                        res.status(503).send({
-                            code: "Failed to get pairing code. Please check your phone number and try again.",
-                        });
+                        return res.status(503).json({ error: "Pairing failed", details: error.message });
                     }
-                    setTimeout(() => process.exit(1), 2000);
                 }
             }
 
@@ -529,8 +538,9 @@ router.get("/", async (req, res) => {
         } catch (err) {
             log(c.red, `❌ Session init error: ${err.message}`);
             if (!res.headersSent) {
-                res.status(503).send({ code: "Service Unavailable" });
+                res.status(500).json({ error: "Server error", details: err.message });
             }
+            removeFile(sessionDir);
             setTimeout(() => process.exit(1), 2000);
         }
     }
@@ -553,7 +563,7 @@ router.get("/status", (req, res) => {
 
 // ─── अनकॉट एरर हैंडलर ──────────────────────────────────────────
 process.on("uncaughtException", (err) => {
-    let e = String(err);
+    const e = String(err);
     const ignored = [
         "conflict", "not-authorized", "Socket connection timeout",
         "rate-overlimit", "Connection Closed", "Timed Out",
