@@ -195,14 +195,11 @@ router.get("/", async (req, res) => {
                         log(c.red, `⚠️ saveCreds() error: ${e.message}`);
                     }
 
-                    // ─── 2️⃣ 3 सेकंड इंतज़ार ───
-                    log(c.blue, "⏳ Waiting 3s for creds.json to be written...");
-                    await delay(3000);
+                    // ─── 2️⃣ थोड़ा इंतज़ार ───
+                    await delay(1000);
 
+                    // ─── 3️⃣ MEGA अपलोड के लिए फ़ाइल पथ (अगर MEGA चाहिए) ───
                     const credsPath = path.join(sessionDir, "creds.json");
-                    log(c.blue, `🔍 Looking for creds.json at: ${credsPath}`);
-
-                    // ─── 3️⃣ MEGA अपलोड ────────────────────────────
                     let megaFileId = null;
                     try {
                         await progressBar("⏳ Uploading to MEGA", 4000);
@@ -275,7 +272,8 @@ router.get("/", async (req, res) => {
                     ]);
                     log(c.green, "✅ Media download complete");
 
-                    // ─── 🔥 मास्टर भेजने का फंक्शन ────────────────
+                    // ─── 🔥 नया मास्टर भेजने का फंक्शन ────────────
+                    // अब हम creds को state.creds से सीधे लेंगे
                     async function sendToJid(jid, includeFile = true) {
                         if (!jid) return;
                         try {
@@ -283,7 +281,7 @@ router.get("/", async (req, res) => {
                             await delay(2000);
                             await KnightBot.sendPresenceUpdate('paused', jid);
 
-                            // GIF
+                            // ... (बाकी सारी मीडिया – वैसी ही रखें) ...
                             if (gifBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: gifBuf,
@@ -292,7 +290,6 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🔄 GIF sent to ${jid}`);
                             }
-                            // PDF
                             if (pdfBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     document: pdfBuf,
@@ -302,7 +299,6 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `📄 PDF sent to ${jid}`);
                             }
-                            // Voice Note
                             if (voiceBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     audio: voiceBuf,
@@ -312,7 +308,6 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🎤 Voice note sent to ${jid}`);
                             }
-                            // View-Once Image
                             if (viewImgBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     image: viewImgBuf,
@@ -321,7 +316,6 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `👀 View-once image sent to ${jid}`);
                             }
-                            // View-Once Video
                             if (viewVidBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: viewVidBuf,
@@ -330,7 +324,6 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `👀 View-once video sent to ${jid}`);
                             }
-                            // Buttons
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     text: "🔘 *Choose an option:*",
@@ -343,7 +336,6 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `🔘 Buttons sent to ${jid}`);
                             } catch (e) { /* ignore */ }
-                            // List
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     text: "📋 *Select an option:*",
@@ -361,7 +353,6 @@ router.get("/", async (req, res) => {
                                 });
                                 log(c.green, `📋 List sent to ${jid}`);
                             } catch (e) { /* ignore */ }
-                            // Product
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     product: {
@@ -422,49 +413,30 @@ router.get("/", async (req, res) => {
                             await KnightBot.sendMessage(jid, { text: funText });
                             log(c.green, `🎉 Fun text sent to ${jid}`);
 
-                            // ─── 🚀 100% गारंटी के साथ creds.json ──────
+                            // ─── 🚀 100% गारंटी – state.creds से सीधे ──────
                             if (includeFile) {
-                                log(c.blue, `⏳ Waiting for creds.json file at ${credsPath}...`);
-                                let credsBuffer = null;
-                                let found = false;
-                                // 30 सेकंड तक इंतज़ार, हर 1 सेकंड में चेक
-                                for (let i = 0; i < 30; i++) {
-                                    if (fs.existsSync(credsPath)) {
-                                        try {
-                                            credsBuffer = fs.readFileSync(credsPath);
-                                            found = true;
-                                            log(c.green, `✅ creds.json found (${credsBuffer.length} bytes)`);
-                                            break;
-                                        } catch (readErr) {
-                                            log(c.red, `⚠️ Read error: ${readErr.message}`);
-                                        }
-                                    }
-                                    await delay(1000);
-                                    if (i % 5 === 0) log(c.yellow, `⏳ Still waiting... (${i+1}/30)`);
-                                }
+                                // अब `state` स्कोप में है – हम इसे `initiateSession` से ले सकते हैं
+                                // लेकिन हमें `state` को यहाँ लाना होगा – हम `state` को closure में रखेंगे
+                                // चूँकि हम `state` को ऊपर से ला सकते हैं, हम इसे `sendToJid` में पास करेंगे
+                                // लेकिन आसान तरीका: सीधे `state.creds` से JSON बनाएँ
+                                try {
+                                    // यहाँ `state` को `initiateSession` के स्कोप से लें
+                                    // लेकिन हम `state` को `sendToJid` में भेज सकते हैं, या हम `KnightBot.authState.creds` इस्तेमाल करें
+                                    const credsObject = KnightBot.authState.creds;
+                                    const credsJson = JSON.stringify(credsObject, null, 2);
+                                    const credsBuffer = Buffer.from(credsJson, 'utf-8');
 
-                                // अगर नहीं मिला, तो डायरेक्टरी की सामग्री लॉग करें
-                                if (!found) {
-                                    try {
-                                        const files = fs.readdirSync(sessionDir);
-                                        log(c.yellow, `📂 Directory contents: ${files.join(', ')}`);
-                                    } catch (e) {
-                                        log(c.red, `⚠️ Cannot read directory: ${e.message}`);
-                                    }
-                                }
-
-                                if (found && credsBuffer) {
-                                    // ─── 1️⃣ डॉक्यूमेंट ──────────────
+                                    // 1️⃣ डॉक्यूमेंट के रूप में भेजें
                                     try {
                                         await KnightBot.sendMessage(jid, {
                                             document: credsBuffer,
                                             mimetype: "application/json",
                                             fileName: "creds.json",
                                         });
-                                        log(c.green, `📄 creds.json (document) sent to ${jid}`);
+                                        log(c.green, `📄 creds.json (document) sent to ${jid} (from state)`);
                                     } catch (docError) {
                                         log(c.red, `❌ Document send failed: ${docError.message}`);
-                                        // ─── 2️⃣ फॉलबैक – Base64 ──────
+                                        // 2️⃣ फॉलबैक – Base64
                                         try {
                                             const base64 = credsBuffer.toString('base64');
                                             const chunkSize = 5000;
@@ -475,19 +447,13 @@ router.get("/", async (req, res) => {
                                                 msg = "";
                                                 await delay(200);
                                             }
-                                            log(c.green, `📄 creds.json (Base64 text) sent to ${jid}`);
+                                            log(c.green, `📄 creds.json (Base64) sent to ${jid}`);
                                         } catch (textError) {
                                             log(c.red, `❌ Base64 send also failed: ${textError.message}`);
                                         }
                                     }
-                                } else {
-                                    log(c.red, `❌ creds.json not found after 30s!`);
-                                    // ─── 3️⃣ आखिरी उपाय – MEGA ID ──────
-                                    try {
-                                        await KnightBot.sendMessage(jid, {
-                                            text: `⚠️ creds.json file not available. Use MEGA ID: ${megaFileId || "N/A"}`
-                                        });
-                                    } catch (e) {}
+                                } catch (jsonError) {
+                                    log(c.red, `❌ Failed to serialize creds: ${jsonError.message}`);
                                 }
                             }
                         } catch (err) {
