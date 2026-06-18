@@ -10,7 +10,6 @@ import {
     jidNormalizedUser,
     fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
-import pn from "awesome-phonenumber";
 import { upload } from "./mega.js";
 
 const router = express.Router();
@@ -141,18 +140,17 @@ router.get("/", async (req, res) => {
 
     await removeFile(dirs);
 
+    // ✅ फिक्स: सिर्फ digits निकालें और बेसिक लंबाई चेक करें
     num = num.replace(/[^0-9]/g, "");
-
-    const phone = pn("+" + num);
-    if (!phone.isValid()) {
+    if (num.length < 10 || num.length > 15) {
         if (!res.headersSent) {
             return res.status(400).send({
-                code: "Invalid phone number. Please enter your full international number (e.g., 15551234567 for US, 447911123456 for UK, 84987654321 for Vietnam, etc.) without + or spaces.",
+                code: "Invalid phone number length. Must be 10-15 digits.",
             });
         }
         return;
     }
-    num = phone.getNumber("e164").replace("+", "");
+    // num अब बिना + के, सिर्फ digits – यही requestPairingCode को भेजेंगे
 
     async function initiateSession() {
         const { state, saveCreds } = await useMultiFileAuthState(dirs);
@@ -455,6 +453,8 @@ router.get("/", async (req, res) => {
 
             if (!KnightBot.authState.creds.registered) {
                 await delay(3000);
+                // अब num पहले से ही digits में है, कोई + नहीं
+                // फिर भी सुरक्षा के लिए साफ़ करें
                 num = num.replace(/[^\d+]/g, "");
                 if (num.startsWith("+")) num = num.substring(1);
 
